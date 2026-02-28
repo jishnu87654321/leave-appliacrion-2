@@ -1,0 +1,372 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { leaveService } from "../services/leaveService";
+import { leaveTypeService } from "../services/leaveTypeService";
+import { userService } from "../services/userService";
+
+interface LeaveRequest {
+  _id: string;
+  id?: string;
+  employee: any;
+  employeeId?: string;
+  employeeName?: string;
+  department?: string;
+  leaveType: any;
+  leaveTypeId?: string;
+  leaveTypeName?: string;
+  leaveTypeCode?: string;
+  leaveTypeColor?: string;
+  fromDate: string;
+  toDate: string;
+  totalDays: number;
+  halfDay: boolean;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  approvalHistory: any[];
+  comments?: string;
+  createdAt: string;
+}
+
+interface LeaveType {
+  _id: string;
+  id?: string;
+  name: string;
+  code: string;
+  color: string;
+  description?: string;
+  accrualType: string;
+  accrualRate: number;
+  carryForwardLimit: number;
+  allowNegativeBalance: boolean;
+  applicableDuringProbation: boolean;
+  requiresDocument?: boolean;
+  maxConsecutiveDays: number;
+  isActive: boolean;
+}
+
+interface User {
+  _id: string;
+  id?: string;
+  name: string;
+  email: string;
+  role: string;
+  department: string;
+  designation?: string;
+  leaveBalances: any[];
+  isActive: boolean;
+  probationStatus?: boolean;
+  joinDate?: string;
+  createdAt?: string;
+  managerId?: string;
+  avatar?: string;
+}
+
+interface LeaveContextType {
+  leaveRequests: LeaveRequest[];
+  leaveTypes: LeaveType[];
+  allUsers: User[];
+  dashboardStats: any;
+  isLoading: boolean;
+  submitLeaveRequest: (data: any) => Promise<{ success: boolean; message: string }>;
+  approveLeave: (requestId: string, comment?: string, hrOverride?: boolean) => Promise<{ success: boolean; message: string }>;
+  rejectLeave: (requestId: string, comment: string) => Promise<{ success: boolean; message: string }>;
+  cancelLeave: (requestId: string, reason?: string) => Promise<{ success: boolean; message: string }>;
+  fetchLeaveRequests: () => Promise<void>;
+  fetchLeaveTypes: () => Promise<void>;
+  fetchUsers: () => Promise<void>;
+  fetchDashboardStats: () => Promise<void>;
+  refreshAllData: () => Promise<void>;
+  updateLeaveType: (id: string, data: any) => Promise<{ success: boolean; message: string }>;
+  updateUser: (id: string, data: any) => Promise<{ success: boolean; message: string }>;
+  getUserById: (id: string) => User | undefined;
+  getRequestById: (id: string) => LeaveRequest | undefined;
+}
+
+const LeaveContext = createContext<LeaveContextType | undefined>(undefined);
+
+export const LeaveProvider = ({ children }: { children: ReactNode }) => {
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true); // Start with true
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  const fetchLeaveRequests = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setLeaveRequests([]);
+        return;
+      }
+      
+      // Fetch based on user role - get from token or auth context
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      
+      let response;
+      if (user.role === 'HR_ADMIN' || user.role === 'MANAGER') {
+        // HR and Manager get all leaves
+        response = await leaveService.getAllLeaves();
+      } else {
+        // Employee gets own leaves
+        response = await leaveService.getMyLeaves();
+      }
+      
+      // Transform API data to match component expectations
+      const transformedLeaves = (response.data.leaves || []).map((leave: any) => ({
+        ...leave,
+        id: leave._id || leave.id,
+        employeeId: leave.employee?._id || leave.employeeId,
+        employeeName: leave.employee?.name || leave.employeeName || '',
+        department: leave.employee?.department || leave.department || '',
+        leaveTypeId: leave.leaveType?._id || leave.leaveTypeId,
+        leaveTypeName: leave.leaveType?.name || leave.leaveTypeName || '',
+        leaveTypeCode: leave.leaveType?.code || leave.leaveTypeCode || '',
+        leaveTypeColor: leave.leaveType?.color || leave.leaveTypeColor || '#3B82F6',
+      }));
+      
+      setLeaveRequests(transformedLeaves);
+    } catch (error) {
+      console.error("Failed to fetch leave requests:", error);
+      setLeaveRequests([]); // Set empty array on error
+    }
+  };
+
+  const fetchLeaveTypes = async () => {
+    try {
+      const response = await leaveTypeService.getAllLeaveTypes(true);
+      // Transform API data
+      const transformedTypes = (response.data.leaveTypes || []).map((lt: any) => ({
+        ...lt,
+        id: lt._id || lt.id,
+      }));
+      setLeaveTypes(transformedTypes);
+    } catch (error) {
+      console.error("Failed to fetch leave types:", error);
+      setLeaveTypes([]); // Set empty array on error
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const response = await userService.getAllUsers();
+      // Transform API data
+      const transformedUsers = (response.data.users || []).map((u: any) => ({
+        ...u,
+        id: u._id || u.id,
+      }));
+      setAllUsers(transformedUsers);
+    } catch (error) {
+      console.error("Failed to fetch users:", error);
+      setAllUsers([]); // Set empty array on error
+    }
+  };
+
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await leaveService.getDashboardStats();
+      setDashboardStats(response.data.stats || {});
+    } catch (error) {
+      console.error("Failed to fetch dashboard stats:", error);
+    }
+  };
+
+  useEffect(() => {
+    // Only fetch leave types if user is authenticated
+    const token = localStorage.getItem('token');
+    if (token) {
+      const loadInitialData = async () => {
+        setIsLoading(true);
+        try {
+          await Promise.all([
+            fetchLeaveTypes(),
+            fetchLeaveRequests(),
+            fetchDashboardStats(),
+          ]);
+          
+          // Fetch users for HR and Manager roles
+          const user = JSON.parse(localStorage.getItem('user') || '{}');
+          if (user.role === 'HR_ADMIN' || user.role === 'MANAGER') {
+            await fetchUsers();
+          }
+        } catch (error) {
+          console.error("Failed to load initial data:", error);
+        } finally {
+          setIsLoading(false);
+          setInitialLoadComplete(true);
+        }
+      };
+      
+      loadInitialData();
+    } else {
+      setIsLoading(false);
+      setInitialLoadComplete(true);
+    }
+  }, []);
+
+  const submitLeaveRequest = async (data: any): Promise<{ success: boolean; message: string }> => {
+    try {
+      await leaveService.applyLeave(data);
+      await Promise.all([fetchLeaveRequests(), fetchDashboardStats()]);
+      // Trigger balance refresh in AuthContext
+      window.dispatchEvent(new CustomEvent('refreshBalances'));
+      // Broadcast refresh event for all components
+      window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
+      return { success: true, message: "Leave request submitted successfully!" };
+    } catch (error: any) {
+      const message = error.response?.data?.message || "Failed to submit leave request.";
+      return { success: false, message };
+    }
+  };
+
+  const approveLeave = async (requestId: string, comment?: string, hrOverride?: boolean): Promise<{ success: boolean; message: string }> => {
+    try {
+      console.log("LeaveContext - Approving leave:", { requestId, comment, hrOverride });
+      const response = await leaveService.approveLeave(requestId, comment, hrOverride);
+      console.log("LeaveContext - Approve response:", response);
+      
+      // Force immediate refresh of all data
+      await Promise.all([
+        fetchLeaveRequests(), 
+        fetchDashboardStats(),
+        fetchUsers() // Refresh users to get updated balances
+      ]);
+      
+      // Trigger balance refresh in AuthContext
+      window.dispatchEvent(new CustomEvent('refreshBalances'));
+      
+      // Broadcast refresh event for all components
+      window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
+      
+      return { success: true, message: "Leave request approved successfully!" };
+    } catch (error: any) {
+      console.error("LeaveContext - Approve error:", error);
+      const message = error.response?.data?.message || "Failed to approve leave request.";
+      return { success: false, message };
+    }
+  };
+
+  const rejectLeave = async (requestId: string, comment: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      console.log("LeaveContext - Rejecting leave:", { requestId, comment });
+      const response = await leaveService.rejectLeave(requestId, comment);
+      console.log("LeaveContext - Reject response:", response);
+      
+      // Force immediate refresh of all data
+      await Promise.all([
+        fetchLeaveRequests(), 
+        fetchDashboardStats(),
+        fetchUsers() // Refresh users to get updated balances
+      ]);
+      
+      // Trigger balance refresh in AuthContext
+      window.dispatchEvent(new CustomEvent('refreshBalances'));
+      
+      // Broadcast refresh event for all components
+      window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
+      
+      return { success: true, message: "Leave request rejected." };
+    } catch (error: any) {
+      console.error("LeaveContext - Reject error:", error);
+      const message = error.response?.data?.message || "Failed to reject leave request.";
+      return { success: false, message };
+    }
+  };
+
+  const cancelLeave = async (requestId: string, reason?: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      await leaveService.cancelLeave(requestId, reason);
+      await Promise.all([fetchLeaveRequests(), fetchDashboardStats()]);
+      // Trigger balance refresh in AuthContext
+      window.dispatchEvent(new CustomEvent('refreshBalances'));
+      // Broadcast refresh event for all components
+      window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
+      return { success: true, message: "Leave request cancelled." };
+    } catch (error: any) {
+      const message = error.response?.data?.message || "Failed to cancel leave request.";
+      return { success: false, message };
+    }
+  };
+
+  const updateLeaveType = async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
+    try {
+      await leaveTypeService.updateLeaveType(id, data);
+      await fetchLeaveTypes();
+      return { success: true, message: "Leave type updated successfully!" };
+    } catch (error: any) {
+      const message = error.response?.data?.message || "Failed to update leave type.";
+      return { success: false, message };
+    }
+  };
+
+  const updateUser = async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
+    try {
+      await userService.updateUser(id, data);
+      // Refresh users without setting global loading state
+      await fetchUsers();
+      return { success: true, message: "User updated successfully!" };
+    } catch (error: any) {
+      const message = error.response?.data?.message || "Failed to update user.";
+      return { success: false, message };
+    }
+  };
+
+  // Separate function for refreshing all data (used after updates)
+  const refreshAllData = async () => {
+    try {
+      setIsLoading(true);
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      
+      const promises = [
+        fetchLeaveTypes(),
+        fetchLeaveRequests(),
+        fetchDashboardStats(),
+      ];
+      
+      if (user.role === 'HR_ADMIN' || user.role === 'MANAGER') {
+        promises.push(fetchUsers());
+      }
+      
+      await Promise.all(promises);
+    } catch (error) {
+      console.error("Failed to refresh data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getUserById = (id: string) => allUsers.find((u) => u._id === id);
+  const getRequestById = (id: string) => leaveRequests.find((r) => r._id === id);
+
+  return (
+    <LeaveContext.Provider
+      value={{
+        leaveRequests,
+        leaveTypes,
+        allUsers,
+        dashboardStats,
+        isLoading: isLoading || !initialLoadComplete,
+        submitLeaveRequest,
+        approveLeave,
+        rejectLeave,
+        cancelLeave,
+        fetchLeaveRequests,
+        fetchLeaveTypes,
+        fetchUsers,
+        fetchDashboardStats,
+        refreshAllData,
+        updateLeaveType,
+        updateUser,
+        getUserById,
+        getRequestById,
+      }}
+    >
+      {children}
+    </LeaveContext.Provider>
+  );
+};
+
+export const useLeave = (): LeaveContextType => {
+  const ctx = useContext(LeaveContext);
+  if (!ctx) throw new Error("useLeave must be used inside LeaveProvider");
+  return ctx;
+};
