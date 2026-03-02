@@ -23,10 +23,13 @@ exports.register = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return next(new AppError(errors.array()[0].msg, 400));
 
-    const { name, email, password, department, designation, phone } = req.body;
+    const { name, email, password, department, designation, phone, role } = req.body;
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) return next(new AppError("Email already registered.", 409));
+
+    // Validate role - only EMPLOYEE or MANAGER allowed during registration
+    const requestedRole = role && (role === "MANAGER" || role === "EMPLOYEE") ? role : "EMPLOYEE";
 
     const user = await User.create({
       name: name.trim(),
@@ -35,7 +38,7 @@ exports.register = async (req, res, next) => {
       department: department.trim(),
       designation: designation?.trim() || "",
       phone: phone?.trim() || "",
-      role: "EMPLOYEE", // Default role; HR assigns role
+      role: requestedRole,
       isActive: false, // Activated by HR
       probationStatus: true,
       probationEndDate: new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
@@ -44,15 +47,49 @@ exports.register = async (req, res, next) => {
     // Initialize leave balances for new user
     await initializeUserBalances(user._id);
 
-    await AuditTrail.log({ action: "User Registered", category: "AUTH", performedBy: user._id, performedByName: user.name, performedByRole: "EMPLOYEE", target: `${user.name} (${user.email})`, metadata: { department, role: "EMPLOYEE" } });
+    // Create manager profile if registering as manager
+    if (requestedRole === "MANAGER") {
+      const Manager = require("../models/Manager");
+      await Manager.create({
+        userId: user._id,
+        department: user.department,
+        managementLevel: "MANAGER",
+        responsibilities: [],
+        approvalAuthority: {
+          maxLeaveDays: 30,
+          canApproveSpecialLeave: false,
+          canOverrideRules: false
+        },
+        isActive: false // Will be activated when HR approves
+      });
+    }
+
+    await AuditTrail.log({ 
+      action: "User Registered", 
+      category: "AUTH", 
+      performedBy: user._id, 
+      performedByName: user.name, 
+      performedByRole: requestedRole, 
+      target: `${user.name} (${user.email})`, 
+      metadata: { department, role: requestedRole } 
+    });
 
     // Notify HR admins
     const hrAdmins = await User.find({ role: "HR_ADMIN", isActive: true });
+    const roleLabel = requestedRole === "MANAGER" ? "Manager" : "Employee";
     for (const admin of hrAdmins) {
-      await Notification.create({ user: admin._id, message: `New user registration: ${user.name} (${user.email}) — ${department}. Please activate their account.`, type: "INFO" });
+      await Notification.create({ 
+        user: admin._id, 
+        message: `New ${roleLabel} registration: ${user.name} (${user.email}) — ${department}. Please review and activate their account.`, 
+        type: "INFO" 
+      });
     }
 
-    res.status(201).json({ success: true, message: "Registration successful. Your account will be activated by HR." });
+    const successMessage = requestedRole === "MANAGER" 
+      ? "Registration successful. Your manager account will be reviewed and activated by HR Admin."
+      : "Registration successful. Your account will be activated by HR Admin.";
+
+    res.status(201).json({ success: true, message: successMessage });
   } catch (err) {
     next(err);
   }

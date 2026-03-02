@@ -18,6 +18,7 @@ const userRoutes = require("./routes/userRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const leaveTypeRoutes = require("./routes/leaveTypeRoutes");
 const reportRoutes = require("./routes/reportRoutes");
+const managerRoutes = require("./routes/managerRoutes");
 
 // Services
 const { processMonthlyAccrual, resetYearlyBalances } = require("./services/leaveBalanceService");
@@ -72,6 +73,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/leave-types", leaveTypeRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/managers", managerRoutes);
 
 // 404 Handler
 app.use((req, res) => {

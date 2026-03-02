@@ -5,6 +5,88 @@ const { AppError } = require("../middleware/errorHandler");
 const { initializeUserBalances, getUserBalances } = require("../services/leaveBalanceService");
 
 /**
+ * POST /api/users — Create new user (HR only)
+ */
+exports.createUser = async (req, res, next) => {
+  try {
+    const { name, email, password, role, department, designation, phone, isActive } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password || !department) {
+      return next(new AppError("Name, email, password, and department are required.", 400));
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return next(new AppError("Email already registered.", 409));
+    }
+
+    // Create user
+    const user = await User.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password,
+      role: role || "EMPLOYEE",
+      department: department.trim(),
+      designation: designation?.trim() || "",
+      phone: phone?.trim() || "",
+      isActive: isActive !== undefined ? isActive : true,
+      probationStatus: true,
+      probationEndDate: new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
+    });
+
+    // Initialize leave balances
+    const { initializeUserBalances } = require("../services/leaveBalanceService");
+    await initializeUserBalances(user._id);
+
+    // Create manager profile if role is MANAGER or HR_ADMIN
+    if (user.role === "MANAGER" || user.role === "HR_ADMIN") {
+      const Manager = require("../models/Manager");
+      const managerProfile = await Manager.create({
+        userId: user._id,
+        department: user.department,
+        managementLevel: user.role === "HR_ADMIN" ? "DIRECTOR" : "MANAGER",
+        responsibilities: [],
+        approvalAuthority: {
+          maxLeaveDays: user.role === "HR_ADMIN" ? 365 : 30,
+          canApproveSpecialLeave: user.role === "HR_ADMIN",
+          canOverrideRules: user.role === "HR_ADMIN"
+        }
+      });
+      await managerProfile.updateTeamSize();
+    }
+
+    await AuditTrail.log({
+      action: "User Created by HR",
+      category: "USER",
+      performedBy: req.user._id,
+      performedByName: req.user.name,
+      performedByRole: req.user.role,
+      target: `${user.name} (${user.email})`,
+      targetId: user._id,
+      targetModel: "User",
+      metadata: { role: user.role, department: user.department },
+    });
+
+    // Notify the new user
+    await Notification.create({
+      user: user._id,
+      message: `Welcome to LeaveMS! Your account has been created by ${req.user.name}. You can now login.`,
+      type: "SUCCESS",
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      message: "User created successfully.", 
+      data: { user } 
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * GET /api/users — Get all users (HR only)
  */
 exports.getAllUsers = async (req, res, next) => {
@@ -52,6 +134,8 @@ exports.updateUser = async (req, res, next) => {
     const user = await User.findById(req.params.id);
     if (!user) return next(new AppError("User not found.", 404));
 
+    const oldRole = user.role;
+
     if (name) user.name = name.trim();
     if (email) user.email = email.toLowerCase().trim();
     if (role) user.role = role;
@@ -62,6 +146,36 @@ exports.updateUser = async (req, res, next) => {
     if (isActive !== undefined) user.isActive = isActive;
 
     await user.save();
+
+    // Handle manager profile creation/deletion on role change
+    if (role && oldRole !== role) {
+      const Manager = require("../models/Manager");
+      
+      if ((role === "MANAGER" || role === "HR_ADMIN") && oldRole === "EMPLOYEE") {
+        // Create manager profile if promoted to manager
+        const existingProfile = await Manager.findOne({ userId: user._id });
+        if (!existingProfile) {
+          const managerProfile = await Manager.create({
+            userId: user._id,
+            department: user.department,
+            managementLevel: role === "HR_ADMIN" ? "DIRECTOR" : "MANAGER",
+            responsibilities: [],
+            approvalAuthority: {
+              maxLeaveDays: role === "HR_ADMIN" ? 365 : 30,
+              canApproveSpecialLeave: role === "HR_ADMIN",
+              canOverrideRules: role === "HR_ADMIN"
+            }
+          });
+          await managerProfile.updateTeamSize();
+        }
+      } else if (role === "EMPLOYEE" && (oldRole === "MANAGER" || oldRole === "HR_ADMIN")) {
+        // Deactivate manager profile if demoted to employee
+        await Manager.findOneAndUpdate(
+          { userId: user._id },
+          { isActive: false }
+        );
+      }
+    }
 
     await AuditTrail.log({
       action: "User Updated",
@@ -120,6 +234,17 @@ exports.activateUser = async (req, res, next) => {
 
     // Initialize leave balances when user is activated
     await initializeUserBalances(user._id);
+
+    // Activate manager profile if user is a manager
+    if (user.role === "MANAGER" || user.role === "HR_ADMIN") {
+      const Manager = require("../models/Manager");
+      const managerProfile = await Manager.findOne({ userId: user._id });
+      if (managerProfile) {
+        managerProfile.isActive = true;
+        await managerProfile.save();
+        await managerProfile.updateTeamSize();
+      }
+    }
 
     await Notification.create({
       user: user._id,

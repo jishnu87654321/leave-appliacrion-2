@@ -1,6 +1,12 @@
 import api from './api';
 
 export const userService = {
+  // Create new user (HR only)
+  createUser: async (data: any) => {
+    const response = await api.post('/users', data);
+    return response.data;
+  },
+
   // Get all users (HR)
   getAllUsers: async (params?: any) => {
     const response = await api.get('/users', { params });

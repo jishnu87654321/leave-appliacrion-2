@@ -11,7 +11,7 @@ export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "", email: "", password: "", confirmPassword: "",
-    department: "", designation: "", phone: "", role: "EMPLOYEE",
+    department: "", designation: "", phone: "", role: "EMPLOYEE" as "EMPLOYEE" | "MANAGER",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -36,7 +36,7 @@ export default function Register() {
     if (err) { setError(err); return; }
     setLoading(true);
     setError("");
-    const result = await register({ name: form.name, email: form.email, password: form.password, department: form.department, designation: form.designation, phone: form.phone, role: "EMPLOYEE" as const });
+    const result = await register({ name: form.name, email: form.email, password: form.password, department: form.department, designation: form.designation, phone: form.phone, role: form.role });
     setLoading(false);
     if (result.success) {
       setSuccess(result.message);
@@ -111,9 +111,31 @@ export default function Register() {
                 placeholder="+1-555-0000"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10" />
             </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Register As *</label>
+              <select 
+                value={form.role} 
+                onChange={(e) => handleChange("role", e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 bg-white"
+                required
+              >
+                <option value="EMPLOYEE">Employee</option>
+                <option value="MANAGER">Manager</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {form.role === "MANAGER" 
+                  ? "⚠️ Manager accounts require HR Admin approval before activation"
+                  : "Employee accounts require HR Admin approval before activation"
+                }
+              </p>
+            </div>
           </div>
 
-          <p className="text-xs text-gray-400">Your account will be activated by HR after verification.</p>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+            <p className="text-xs text-blue-800">
+              <strong>Note:</strong> Your account will be reviewed and activated by HR Admin after verification.
+            </p>
+          </div>
 
           <button type="submit" disabled={loading}
             className="w-full bg-[#1E3A8A] hover:bg-blue-800 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-60 mt-1">

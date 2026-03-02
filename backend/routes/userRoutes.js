@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect } = require("../middleware/auth");
 const { restrictTo } = require("../middleware/roleCheck");
 const {
+  createUser,
   getAllUsers,
   getUserById,
   updateUser,
@@ -23,6 +24,7 @@ router.get("/:id/balances", getUserLeaveBalances);
 // Manager and HR Admin routes
 router.use(restrictTo("HR_ADMIN", "MANAGER"));
 
+router.post("/", restrictTo("HR_ADMIN"), createUser);
 router.get("/", getAllUsers);
 router.get("/:id", getUserById);
 router.put("/:id", updateUser);

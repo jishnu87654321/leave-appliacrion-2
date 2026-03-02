@@ -22,6 +22,7 @@ export default function UserManagement() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [deptFilter, setDeptFilter] = useState("ALL");
   const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [balanceReason, setBalanceReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -119,6 +120,57 @@ export default function UserManagement() {
       leaveBalances: u.leaveBalances || []
     });
     setBalanceReason("");
+  };
+
+  const startCreate = () => {
+    setIsCreating(true);
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      phone: "",
+      designation: "",
+      role: "EMPLOYEE",
+      department: "Engineering",
+      isActive: true,
+      probationStatus: true,
+    });
+  };
+
+  const handleCreate = async () => {
+    if (isSaving) return;
+    
+    // Validation
+    if (!formData.name?.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    if (!formData.email?.trim()) {
+      toast.error("Email is required");
+      return;
+    }
+    if (!formData.password?.trim() || formData.password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    if (!formData.department?.trim()) {
+      toast.error("Department is required");
+      return;
+    }
+    
+    setIsSaving(true);
+    try {
+      await userService.createUser(formData);
+      toast.success("User created successfully");
+      setIsCreating(false);
+      setFormData({});
+      await fetchUsers();
+    } catch (error: any) {
+      console.error("Error creating user:", error);
+      toast.error(error.response?.data?.message || "Failed to create user");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -220,32 +272,41 @@ export default function UserManagement() {
       {/* Content - Only show when not loading */}
       {!isLoading && (
         <>
-          {/* Tabs */}
-          <div className="flex gap-2 mb-5">
-        <button
-          onClick={() => setActiveTab("active")}
-          className={`px-6 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-            activeTab === "active"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-          }`}
-        >
-          Active Users ({activeUsers.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("pending")}
-          className={`px-6 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 ${
-            activeTab === "pending"
-              ? "bg-amber-600 text-white shadow-md"
-              : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          Pending Approval ({pendingUsers.length})
-        </button>
-      </div>
+          {/* Header with Create Button */}
+          <div className="flex justify-between items-center mb-5">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab("active")}
+                className={`px-6 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                  activeTab === "active"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                Active Users ({activeUsers.length})
+              </button>
+              <button
+                onClick={() => setActiveTab("pending")}
+                className={`px-6 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 ${
+                  activeTab === "pending"
+                    ? "bg-amber-600 text-white shadow-md"
+                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <Clock className="w-4 h-4" />
+                Pending Approval ({pendingUsers.length})
+              </button>
+            </div>
+            <button
+              onClick={startCreate}
+              className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl font-semibold text-sm hover:bg-green-700 transition-all shadow-md hover:shadow-lg"
+            >
+              <UserPlus className="w-4 h-4" />
+              Create New User
+            </button>
+          </div>
 
-      {/* Filters */}
+          {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-5 flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -457,6 +518,139 @@ export default function UserManagement() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Create User Modal */}
+      <Modal 
+        isOpen={isCreating} 
+        onClose={() => setIsCreating(false)} 
+        title="Create New User" 
+        size="xl"
+        footer={
+          <div className="flex gap-3">
+            <button 
+              onClick={() => setIsCreating(false)} 
+              disabled={isSaving} 
+              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleCreate} 
+              disabled={isSaving} 
+              className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSaving ? 'Creating...' : 'Create User'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Full Name *</label>
+              <input 
+                type="text" 
+                value={formData.name || ""}
+                onChange={e => setFormData((p: any) => ({ ...p, name: e.target.value }))}
+                placeholder="John Doe"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Email *</label>
+              <input 
+                type="email" 
+                value={formData.email || ""}
+                onChange={e => setFormData((p: any) => ({ ...p, email: e.target.value }))}
+                placeholder="john@example.com"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Password *</label>
+              <input 
+                type="password" 
+                value={formData.password || ""}
+                onChange={e => setFormData((p: any) => ({ ...p, password: e.target.value }))}
+                placeholder="Min 6 characters"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Phone</label>
+              <input 
+                type="tel" 
+                value={formData.phone || ""}
+                onChange={e => setFormData((p: any) => ({ ...p, phone: e.target.value }))}
+                placeholder="+1234567890"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Designation</label>
+              <input 
+                type="text" 
+                value={formData.designation || ""}
+                onChange={e => setFormData((p: any) => ({ ...p, designation: e.target.value }))}
+                placeholder="Software Engineer"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Role *</label>
+              <select 
+                value={formData.role || 'EMPLOYEE'} 
+                onChange={e => setFormData((p: any) => ({ ...p, role: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
+              >
+                <option value="EMPLOYEE">Employee</option>
+                <option value="MANAGER">Manager</option>
+                <option value="HR_ADMIN">HR Admin</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Department *</label>
+              <select 
+                value={formData.department || 'Engineering'} 
+                onChange={e => setFormData((p: any) => ({ ...p, department: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
+              >
+                {["Engineering", "Marketing", "Design", "Human Resources", "Finance", "Operations", "Sales"].map(d => 
+                  <option key={d} value={d}>{d}</option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setFormData((p: any) => ({ ...p, isActive: !p.isActive }))} 
+                className={`transition-colors ${formData.isActive ? "text-green-600" : "text-gray-300"}`}
+              >
+                {formData.isActive ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
+              </button>
+              <span className="text-sm font-medium text-gray-700">Active Account</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setFormData((p: any) => ({ ...p, probationStatus: !p.probationStatus }))} 
+                className={`transition-colors ${formData.probationStatus ? "text-amber-500" : "text-gray-300"}`}
+              >
+                {formData.probationStatus ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
+              </button>
+              <span className="text-sm font-medium text-gray-700">On Probation</span>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+            <p className="text-xs text-blue-800">
+              <strong>Note:</strong> Leave balances will be automatically initialized based on the configured leave types. 
+              The user will receive a welcome notification and can login immediately.
+            </p>
+          </div>
+        </div>
       </Modal>
         </>
       )}
