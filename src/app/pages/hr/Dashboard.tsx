@@ -11,6 +11,7 @@ import { formatDate } from "../../utils/dateUtils";
 export default function HRDashboard() {
   const { leaveRequests, allUsers, isLoading, refreshAllData } = useLeave();
   const { currentUser } = useAuth();
+  const roleKey = String(currentUser?.role || "").toUpperCase();
 
   // Ensure data is loaded when component mounts
   useEffect(() => {
@@ -46,8 +47,8 @@ export default function HRDashboard() {
 
   // Show loading state while data is being fetched
   if (isLoading) {
-    const pageTitle = currentUser?.role === "MANAGER" ? "Manager Dashboard" : "HR Dashboard";
-    const pageSubtitle = currentUser?.role === "MANAGER" ? "Full system access and leave management" : "System-wide leave management overview";
+    const pageTitle = roleKey === "MANAGER" ? "Manager Dashboard" : "HR Dashboard";
+    const pageSubtitle = roleKey === "MANAGER" ? "Full system access and leave management" : "System-wide leave management overview";
     
     return (
       <DashboardLayout title={pageTitle} subtitle={pageSubtitle} allowedRoles={["HR_ADMIN", "MANAGER"]}>
@@ -80,10 +81,10 @@ export default function HRDashboard() {
     );
   }
 
-  const pageTitle = currentUser?.role === "MANAGER" ? "Manager Dashboard" : "HR Dashboard";
-  const pageSubtitle = currentUser?.role === "MANAGER" ? "Full system access and leave management" : "System-wide leave management overview";
+  const pageTitle = roleKey === "MANAGER" ? "Manager Dashboard" : "HR Dashboard";
+  const pageSubtitle = roleKey === "MANAGER" ? "Full system access and leave management" : "System-wide leave management overview";
   
-  const pending = leaveRequests.filter(r => r.status === "PENDING");
+  const pending = leaveRequests.filter(r => r.status === "PENDING" || r.status === "HR_PENDING");
   const approved = leaveRequests.filter(r => r.status === "APPROVED").length;
   const rejected = leaveRequests.filter(r => r.status === "REJECTED").length;
   const activeUsers = allUsers.filter(u => u.isActive).length;

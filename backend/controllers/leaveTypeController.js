@@ -1,19 +1,116 @@
 const LeaveType = require("../models/LeaveType");
 const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
+const POLICY = require("../config/policy");
+
+const CORE_POLICIES = {
+  EL: {
+    name: "Earned Leave",
+    code: "EL",
+    color: "#10B981",
+    description: "Accrued monthly leave for planned time off",
+    accrualType: "MONTHLY",
+    accrualRate: POLICY.LEAVE_TYPES.EARNED.accrualRate,
+    accrualPerMonth: POLICY.LEAVE_TYPES.EARNED.accrualRate,
+    yearlyTotal: POLICY.LEAVE_TYPES.EARNED.annualEntitlement,
+    carryForwardLimit: POLICY.LEAVE_TYPES.EARNED.carryForwardLimit,
+    maxConsecutiveDays: POLICY.LEAVE_TYPES.EARNED.maxConsecutiveDays,
+    isActive: true,
+  },
+  SL: {
+    name: "Sick Leave",
+    code: "SL",
+    color: "#EF4444",
+    description: "For medical reasons",
+    accrualType: "MONTHLY",
+    accrualRate: POLICY.LEAVE_TYPES.SICK.accrualRate,
+    accrualPerMonth: POLICY.LEAVE_TYPES.SICK.accrualRate,
+    yearlyTotal: POLICY.LEAVE_TYPES.SICK.annualEntitlement,
+    carryForwardLimit: 0,
+    maxConsecutiveDays: 30,
+    isActive: true,
+  },
+};
+
+const normalizeLeaveTypePayload = (leaveType) => {
+  const doc = leaveType?.toObject ? leaveType.toObject() : leaveType;
+  const accrualType = String(doc?.accrualType || "").toUpperCase();
+  const accrualPerMonth = Number(doc?.accrualPerMonth ?? (accrualType === "MONTHLY" ? doc?.accrualRate : 0) ?? 0);
+  const yearlyTotal = Number(doc?.yearlyTotal ?? (accrualType === "MONTHLY" ? accrualPerMonth * 12 : doc?.accrualRate) ?? 0);
+  return {
+    ...doc,
+    code: String(doc?.code || "").toUpperCase(),
+    isActive: doc?.isActive !== false,
+    active: doc?.isActive !== false,
+    accrualPerMonth,
+    yearlyTotal,
+    accrualPerYear: yearlyTotal,
+    maxConsecutive: Number(doc?.maxConsecutiveDays ?? 30),
+  };
+};
+
+async function ensureCoreLeaveTypes() {
+  const [earned, sick, casual] = await Promise.all([
+    LeaveType.findOne({ code: "EL" }),
+    LeaveType.findOne({ code: "SL" }),
+    LeaveType.findOne({ code: "CL" }),
+  ]);
+
+  if (!earned) {
+    await LeaveType.create({
+      ...CORE_POLICIES.EL,
+      allowNegativeBalance: false,
+      applicableDuringProbation: false,
+      requiresDocument: false,
+    });
+  } else {
+    Object.assign(earned, CORE_POLICIES.EL);
+    await earned.save();
+  }
+
+  if (!sick) {
+    await LeaveType.create({
+      ...CORE_POLICIES.SL,
+      allowNegativeBalance: false,
+      applicableDuringProbation: true,
+      requiresDocument: true,
+      documentRequiredAfterDays: 3,
+    });
+  } else {
+    Object.assign(sick, CORE_POLICIES.SL);
+    await sick.save();
+  }
+
+  if (casual) {
+    casual.isActive = false;
+    casual.accrualType = "NONE";
+    casual.accrualRate = 0;
+    casual.accrualPerMonth = 0;
+    casual.yearlyTotal = 0;
+    casual.carryForwardLimit = 0;
+    await casual.save();
+  }
+}
 
 /**
  * GET /api/leave-types — Get all leave types
  */
 exports.getAllLeaveTypes = async (req, res, next) => {
   try {
+    await ensureCoreLeaveTypes();
     const { isActive } = req.query;
     const query = {};
-    if (isActive !== undefined) query.isActive = isActive === "true";
+    if (isActive !== undefined) {
+      query.isActive = isActive === "true";
+      if (query.isActive) {
+        query.code = { $ne: "CL" };
+      }
+    }
 
     const leaveTypes = await LeaveType.find(query).sort({ displayOrder: 1, name: 1 });
+    const normalizedLeaveTypes = leaveTypes.map(normalizeLeaveTypePayload);
 
-    res.json({ success: true, count: leaveTypes.length, data: { leaveTypes } });
+    res.json({ success: true, count: normalizedLeaveTypes.length, data: { leaveTypes: normalizedLeaveTypes } });
   } catch (err) {
     next(err);
   }
@@ -62,6 +159,8 @@ exports.createLeaveType = async (req, res, next) => {
       description: description?.trim() || "",
       accrualType,
       accrualRate,
+      accrualPerMonth: accrualType === "MONTHLY" ? accrualRate : 0,
+      yearlyTotal: accrualType === "MONTHLY" ? accrualRate * 12 : accrualRate,
       carryForwardLimit: carryForwardLimit || 0,
       maxConsecutiveDays: maxConsecutiveDays || 365,
       allowNegativeBalance: allowNegativeBalance || false,
@@ -73,7 +172,7 @@ exports.createLeaveType = async (req, res, next) => {
 
     await AuditTrail.log({
       action: "Leave Type Created",
-      category: "CONFIG",
+      category: "POLICY",
       performedBy: req.user._id,
       performedByName: req.user.name,
       performedByRole: req.user.role,
@@ -99,18 +198,43 @@ exports.updateLeaveType = async (req, res, next) => {
 
     const allowedFields = [
       "name", "description", "accrualRate", "carryForwardLimit", "maxConsecutiveDays",
-      "allowNegativeBalance", "applicableDuringProbation", "requiresDocument", "color", "displayOrder", "isActive"
+      "allowNegativeBalance", "applicableDuringProbation", "requiresDocument", "color", "displayOrder", "isActive",
+      "yearlyTotal", "accrualPerMonth",
     ];
 
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) leaveType[field] = req.body[field];
     });
 
+    if (leaveType.code === "EL") {
+      leaveType.name = "Earned Leave";
+      leaveType.description = "Accrued monthly leave for planned time off";
+      leaveType.accrualType = "MONTHLY";
+      leaveType.accrualRate = 1.25;
+      leaveType.accrualPerMonth = 1.25;
+      leaveType.yearlyTotal = 15;
+      leaveType.carryForwardLimit = 30;
+      leaveType.maxConsecutiveDays = 30;
+      leaveType.isActive = true;
+    } else if (leaveType.code === "SL") {
+      leaveType.name = "Sick Leave";
+      leaveType.description = "For medical reasons";
+      leaveType.accrualType = "MONTHLY";
+      leaveType.accrualRate = 1;
+      leaveType.accrualPerMonth = 1;
+      leaveType.yearlyTotal = 12;
+      leaveType.carryForwardLimit = 0;
+      leaveType.maxConsecutiveDays = 30;
+      leaveType.isActive = true;
+    } else if (leaveType.code === "CL") {
+      leaveType.isActive = false;
+    }
+
     await leaveType.save();
 
     await AuditTrail.log({
       action: "Leave Type Updated",
-      category: "CONFIG",
+      category: "POLICY",
       performedBy: req.user._id,
       performedByName: req.user.name,
       performedByRole: req.user.role,
@@ -138,7 +262,7 @@ exports.deleteLeaveType = async (req, res, next) => {
 
     await AuditTrail.log({
       action: "Leave Type Deleted",
-      category: "CONFIG",
+      category: "POLICY",
       performedBy: req.user._id,
       performedByName: req.user.name,
       performedByRole: req.user.role,

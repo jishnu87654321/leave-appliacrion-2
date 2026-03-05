@@ -102,6 +102,11 @@ export const EmployeeDirectoryTable: React.FC<EmployeeDirectoryTableProps> = ({
               </th>
               {showLeaveBalances && (
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">
+                  Earned Leave
+                </th>
+              )}
+              {showLeaveBalances && (
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">
                   Leave Balances
                 </th>
               )}
@@ -114,7 +119,7 @@ export const EmployeeDirectoryTable: React.FC<EmployeeDirectoryTableProps> = ({
             {employees.length === 0 ? (
               <tr>
                 <td
-                  colSpan={showLeaveBalances ? 7 : 6}
+                  colSpan={showLeaveBalances ? 8 : 6}
                   className="px-4 py-12 text-center text-gray-400"
                 >
                   <p className="text-sm font-medium">No employees found</p>
@@ -195,6 +200,14 @@ export const EmployeeDirectoryTable: React.FC<EmployeeDirectoryTableProps> = ({
                   </td>
 
                   {/* Leave Entitlements Column */}
+                  {showLeaveBalances && (
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-bold text-blue-700">
+                        {employee.leaveBalances?.find((b) => b.code === "EL")?.balance ?? 0}
+                      </span>
+                    </td>
+                  )}
+
                   {showLeaveBalances && (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">

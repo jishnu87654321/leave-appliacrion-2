@@ -6,12 +6,10 @@ const morgan = require("morgan");
 const cron = require("node-cron");
 const mongoose = require("mongoose");
 const connectDB = require("./config/db");
-const logger = require("./utils/logger");
 const { globalErrorHandler } = require("./middleware/errorHandler");
 const { apiLimiter } = require("./middleware/rateLimiter");
 const { slowRequestLogger } = require("./utils/performance");
 
-// Route imports
 const authRoutes = require("./routes/authRoutes");
 const leaveRoutes = require("./routes/leaveRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -19,135 +17,149 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const leaveTypeRoutes = require("./routes/leaveTypeRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const managerRoutes = require("./routes/managerRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const calendarRoutes = require("./routes/calendarRoutes");
 
-// Services
-const { processMonthlyAccrual, resetYearlyBalances } = require("./services/leaveBalanceService");
+const { creditMonthlyLeaves } = require("./services/monthlyCredit");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect Database
 connectDB();
 
-// Security Middlewares
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false,
-}));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    credentials: true,
+  })
+);
 
-// Request Middlewares
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Logging only in development
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
-// Rate Limiting
 app.use("/api/", apiLimiter);
-
-// Compression
 app.use((req, res, next) => {
-  res.setHeader('X-Powered-By', 'Leave Management System');
+  res.setHeader("X-Powered-By", "Leave Management System");
   next();
 });
+app.use(slowRequestLogger(2000));
 
-// Performance monitoring
-app.use(slowRequestLogger(2000)); // Log requests taking more than 2 seconds
-
-// Health Check
 app.get("/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString(), version: "1.0.0" });
 });
 
-// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/leaves", leaveRoutes);
+app.use("/api/leave", leaveRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/leave-types", leaveTypeRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/managers", managerRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/calendar", calendarRoutes);
 
-// 404 Handler
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
-// Global Error Handler
 app.use(globalErrorHandler);
 
-// ── CRON JOBS ──────────────────────────────────────────────────
-// Only run cron jobs in production or if explicitly enabled
-if (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true') {
-  // Monthly leave accrual — runs on 1st of every month at midnight
-  cron.schedule("0 0 1 * *", async () => {
-    console.log("⏰ Running monthly leave accrual...");
-    try {
-      await processMonthlyAccrual();
-      console.log("✅ Monthly accrual completed");
-    } catch (err) {
-      console.error("❌ Monthly accrual failed:", err.message);
-    }
-  });
+function registerCronJobs() {
+  if (process.env.NODE_ENV === "production" || process.env.ENABLE_CRON === "true") {
+    cron.schedule(
+      "0 0 1 * *",
+      async () => {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("Running monthly leave credit...");
+        }
+        try {
+          await creditMonthlyLeaves({ source: "MONTHLY_JOB" });
+          if (process.env.NODE_ENV !== "production") {
+            console.log("Monthly credit completed");
+          }
+        } catch (err) {
+          console.error("Monthly credit failed:", err.message);
+        }
+      },
+      { timezone: process.env.ORG_TIMEZONE || "Asia/Kolkata" }
+    );
 
-  // Yearly reset — runs on Jan 1st at midnight
-  cron.schedule("0 0 1 1 *", async () => {
-    console.log("⏰ Running yearly leave reset...");
-    try {
-      await resetYearlyBalances();
-      console.log("✅ Yearly reset completed");
-    } catch (err) {
-      console.error("❌ Yearly reset failed:", err.message);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("Cron jobs enabled");
     }
-  });
-  
-  console.log("⏰ Cron jobs enabled");
+  }
 }
 
-const server = app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-  console.log(`📡 API endpoint: http://localhost:${PORT}/api`);
-  console.log(`💚 Health check: http://localhost:${PORT}/health\n`);
-  console.log('Ready to accept requests!\n');
-});
+function startServer(port = PORT) {
+  registerCronJobs();
 
-// Graceful shutdown
-const gracefulShutdown = (signal) => {
-  console.log(`\n⚠️  ${signal} received. Shutting down gracefully...`);
-  server.close(() => {
-    console.log('✅ HTTP server closed');
-    mongoose.connection.close(false, () => {
-      console.log('✅ MongoDB connection closed');
-      process.exit(0);
-    });
+  const server = app.listen(port, () => {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`Server running on http://localhost:${port}`);
+      console.log(`API endpoint: http://localhost:${port}/api`);
+      console.log(`Health check: http://localhost:${port}/health`);
+    }
   });
 
-  // Force shutdown after 10 seconds
-  setTimeout(() => {
-    console.error('❌ Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
-};
+  let isShuttingDown = false;
+  const gracefulShutdown = async (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`\n${signal} received. Shutting down gracefully...`);
+    }
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err.message);
-  gracefulShutdown('UNCAUGHT_EXCEPTION');
-});
+    const forceExit = setTimeout(() => {
+      process.exit(1);
+    }, 10000);
 
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Rejection:', err.message);
-  gracefulShutdown('UNHANDLED_REJECTION');
-});
+    try {
+      await new Promise((resolve) => server.close(resolve));
+      await mongoose.connection.close();
+      clearTimeout(forceExit);
+      process.exit(0);
+    } catch (err) {
+      if (process.env.NODE_ENV !== "production") {
+        console.error("Shutdown error:", err.message);
+      }
+      process.exit(1);
+    }
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("uncaughtException", (err) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Uncaught Exception:", err);
+    }
+    gracefulShutdown("UNCAUGHT_EXCEPTION");
+  });
+  process.on("unhandledRejection", (err) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Unhandled Rejection:", err);
+    }
+    gracefulShutdown("UNHANDLED_REJECTION");
+  });
+
+  return server;
+}
+
+if (require.main === module) {
+  startServer(PORT);
+}
 
 module.exports = app;
+module.exports.startServer = startServer;

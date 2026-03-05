@@ -8,7 +8,8 @@
     "build:analyze": "vite build --mode analyze",
     "build:prod": "vite build --mode production",
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa:verify": "node qa/verify.cjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

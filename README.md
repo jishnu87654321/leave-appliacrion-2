@@ -300,3 +300,33 @@ Your Leave Management System is fully operational with complete frontend-backend
 ---
 
 **Built with ❤️ using React, Node.js, Express, and MongoDB**
+
+## QA Verification Runner
+
+Run full automated policy/API verification in one command.
+
+### 1) Set test database URI
+
+Set `MONGODB_URI_TEST` to a dedicated test DB.
+
+Windows PowerShell:
+```powershell
+$env:MONGODB_URI_TEST="mongodb://127.0.0.1:27017/leave_management_test"
+```
+
+Linux/macOS:
+```bash
+export MONGODB_URI_TEST="mongodb://127.0.0.1:27017/leave_management_test"
+```
+
+### 2) Run verification
+
+```bash
+npm run qa:verify
+```
+
+### 3) Results
+
+- Console shows `[PASS]`, `[FAIL]`, `[SKIP]` for each check.
+- Final summary prints passed/failed/skipped totals.
+- JSON report is saved to `qa/report.json`.

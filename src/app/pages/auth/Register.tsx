@@ -11,7 +11,7 @@ export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "", email: "", password: "", confirmPassword: "",
-    department: "", designation: "", phone: "", role: "EMPLOYEE" as "EMPLOYEE" | "MANAGER",
+    department: "", designation: "", phone: "", role: "EMPLOYEE" as "EMPLOYEE" | "INTERN" | "MANAGER",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -120,12 +120,13 @@ export default function Register() {
                 required
               >
                 <option value="EMPLOYEE">Employee</option>
+                <option value="INTERN">Interns</option>
                 <option value="MANAGER">Manager</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
                 {form.role === "MANAGER" 
                   ? "⚠️ Manager accounts require HR Admin approval before activation"
-                  : "Employee accounts require HR Admin approval before activation"
+                  : form.role === "INTERN" ? "Intern accounts follow intern-specific monthly accrual policy after activation" : "Employee accounts require HR Admin approval before activation"
                 }
               </p>
             </div>
@@ -154,3 +155,5 @@ export default function Register() {
     </AuthLayout>
   );
 }
+
+

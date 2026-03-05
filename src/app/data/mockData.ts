@@ -1,5 +1,5 @@
 export type Role = "EMPLOYEE" | "MANAGER" | "HR_ADMIN";
-export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+export type LeaveStatus = "PENDING" | "HR_PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export type AccrualType = "MONTHLY" | "YEARLY";
 
 export interface User {
@@ -89,9 +89,9 @@ export interface AuditEntry {
 
 // ── LEAVE TYPES ──────────────────────────────────────────
 export const leaveTypes: LeaveType[] = [
-  { id: "lt1", name: "Casual Leave", code: "CL", color: "#3B82F6", accrualType: "YEARLY", accrualRate: 12, carryForwardLimit: 5, allowNegativeBalance: false, applicableDuringProbation: true, maxConsecutiveDays: 3, requiresDocument: false, description: "General personal leave for casual purposes" },
-  { id: "lt2", name: "Sick Leave", code: "SL", color: "#EF4444", accrualType: "YEARLY", accrualRate: 10, carryForwardLimit: 0, allowNegativeBalance: false, applicableDuringProbation: true, maxConsecutiveDays: 7, requiresDocument: true, description: "Leave for medical illness or health reasons" },
-  { id: "lt3", name: "Earned Leave", code: "EL", color: "#10B981", accrualType: "MONTHLY", accrualRate: 1.5, carryForwardLimit: 30, allowNegativeBalance: false, applicableDuringProbation: false, maxConsecutiveDays: 30, requiresDocument: false, description: "Earned/Paid leave accrued over time" },
+  { id: "lt1", name: "Casual Leave", code: "CL", color: "#3B82F6", accrualType: "YEARLY", accrualRate: 0, carryForwardLimit: 0, allowNegativeBalance: false, applicableDuringProbation: true, maxConsecutiveDays: 3, requiresDocument: false, description: "Legacy leave type. Disabled for new requests." },
+  { id: "lt2", name: "Sick Leave", code: "SL", color: "#EF4444", accrualType: "MONTHLY", accrualRate: 1, carryForwardLimit: 0, allowNegativeBalance: false, applicableDuringProbation: true, maxConsecutiveDays: 7, requiresDocument: true, description: "Leave for medical illness or health reasons" },
+  { id: "lt3", name: "Earned Leave", code: "EL", color: "#10B981", accrualType: "MONTHLY", accrualRate: 1.25, carryForwardLimit: 30, allowNegativeBalance: false, applicableDuringProbation: false, maxConsecutiveDays: 30, requiresDocument: false, description: "Earned/Paid leave accrued over time" },
   { id: "lt5", name: "Work From Home", code: "WFH", color: "#8B5CF6", accrualType: "MONTHLY", accrualRate: 4, carryForwardLimit: 0, allowNegativeBalance: false, applicableDuringProbation: true, maxConsecutiveDays: 30, requiresDocument: false, description: "Remote work from home days" },
   { id: "lt6", name: "Optional Holiday", code: "OH", color: "#F97316", accrualType: "YEARLY", accrualRate: 2, carryForwardLimit: 0, allowNegativeBalance: false, applicableDuringProbation: true, maxConsecutiveDays: 1, requiresDocument: false, description: "Optional holidays from pre-defined list" },
 ];

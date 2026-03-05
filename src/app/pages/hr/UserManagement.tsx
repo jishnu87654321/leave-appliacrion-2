@@ -5,14 +5,20 @@ import { Modal } from "../../components/Modal";
 import { EmployeeDirectoryTable, EmployeeData } from "../../components/EmployeeDirectoryTable";
 import { useLeave } from "../../context/LeaveContext";
 import { userService } from "../../services/userService";
+import { adminService } from "../../services/adminService";
 import { toast } from "sonner";
 
-type Role = "EMPLOYEE" | "MANAGER" | "HR_ADMIN";
+type Role = "EMPLOYEE" | "INTERN" | "MANAGER" | "HR_ADMIN" | "employee" | "intern" | "manager" | "hr_admin";
 
 const roleColors: Record<Role, string> = {
   EMPLOYEE: "bg-green-100 text-green-700",
+  INTERN: "bg-cyan-100 text-cyan-700",
   MANAGER: "bg-blue-100 text-blue-700",
   HR_ADMIN: "bg-purple-100 text-purple-700",
+  employee: "bg-green-100 text-green-700",
+  intern: "bg-cyan-100 text-cyan-700",
+  manager: "bg-blue-100 text-blue-700",
+  hr_admin: "bg-purple-100 text-purple-700",
 };
 
 export default function UserManagement() {
@@ -26,6 +32,7 @@ export default function UserManagement() {
   const [formData, setFormData] = useState<any>({});
   const [balanceReason, setBalanceReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [departmentRequests, setDepartmentRequests] = useState<any[]>([]);
 
   // Ensure data is loaded when component mounts
   React.useEffect(() => {
@@ -41,6 +48,13 @@ export default function UserManagement() {
   console.log("UserManagement - leaveTypes:", leaveTypes.length);
   console.log("UserManagement - isLoading:", isLoading);
 
+  React.useEffect(() => {
+    adminService
+      .getDepartmentChangeRequests()
+      .then((res) => setDepartmentRequests(res.data.requests || []))
+      .catch(() => undefined);
+  }, []);
+
   const departments = [...new Set(allUsers.map(u => u.department).filter(Boolean))];
 
   // Separate active and pending users
@@ -48,10 +62,18 @@ export default function UserManagement() {
   const pendingUsers = allUsers.filter(u => !u.isActive);
 
   const usersToDisplay = activeTab === "active" ? activeUsers : pendingUsers;
+  const roleKey = (role: string) => String(role || "").toUpperCase();
+  const roleLabel = (role: string) => {
+    const key = roleKey(role);
+    if (key === "HR_ADMIN") return "HR Admin";
+    if (key === "MANAGER") return "Manager";
+    if (key === "INTERN") return "Interns";
+    return "Employee";
+  };
 
   const filtered = usersToDisplay.filter(u => {
     const matchSearch = (u.name?.toLowerCase() || "").includes(search.toLowerCase()) || (u.email?.toLowerCase() || "").includes(search.toLowerCase());
-    const matchRole = roleFilter === "ALL" || u.role === roleFilter;
+    const matchRole = roleFilter === "ALL" || roleKey(u.role) === roleKey(roleFilter);
     const matchDept = deptFilter === "ALL" || u.department === deptFilter;
     return matchSearch && matchRole && matchDept;
   });
@@ -71,7 +93,7 @@ export default function UserManagement() {
         email: u.email || '',
         department: u.department || '',
         designation: u.designation || '',
-        role: (u.role || 'EMPLOYEE') as "EMPLOYEE" | "MANAGER" | "HR_ADMIN",
+        role: ((roleKey(u.role || "EMPLOYEE")) as "EMPLOYEE" | "MANAGER" | "HR_ADMIN"),
         joinDate: u.joinDate || u.createdAt || '',
         isActive: u.isActive ?? true,
         probationStatus: u.probationStatus ?? false,
@@ -130,7 +152,7 @@ export default function UserManagement() {
       password: "",
       phone: "",
       designation: "",
-      role: "EMPLOYEE",
+      role: "employee",
       department: "Engineering",
       isActive: true,
       probationStatus: true,
@@ -316,9 +338,10 @@ export default function UserManagement() {
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
           className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none bg-white">
           <option value="ALL">All Roles</option>
-          <option value="EMPLOYEE">Employee</option>
-          <option value="MANAGER">Manager</option>
-          <option value="HR_ADMIN">HR Admin</option>
+          <option value="employee">Employee</option>
+          <option value="manager">Manager</option>
+          <option value="hr_admin">HR Admin</option>
+          <option value="intern">Interns</option>
         </select>
         <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
           className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none bg-white">
@@ -332,8 +355,9 @@ export default function UserManagement() {
         <div className="flex gap-4 mb-5 text-sm flex-wrap">
           {[
             { label: "Total Active", count: activeUsers.length, color: "text-gray-900" },
-            { label: "Employees", count: activeUsers.filter(u => u.role === "EMPLOYEE").length, color: "text-green-700" },
-            { label: "Managers", count: activeUsers.filter(u => u.role === "MANAGER").length, color: "text-blue-700" },
+            { label: "Employees", count: activeUsers.filter(u => roleKey(u.role) === "EMPLOYEE").length, color: "text-green-700" },
+            { label: "Interns", count: activeUsers.filter(u => roleKey(u.role) === "INTERN").length, color: "text-cyan-700" },
+            { label: "Managers", count: activeUsers.filter(u => roleKey(u.role) === "MANAGER").length, color: "text-blue-700" },
             { label: "On Probation", count: activeUsers.filter(u => u.probationStatus).length, color: "text-amber-700" },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl px-4 py-2 border border-gray-100 shadow-sm">
@@ -398,7 +422,7 @@ export default function UserManagement() {
                         <p className="text-xs text-gray-400">{u.designation || 'N/A'}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${roleColors[u.role as Role] || 'bg-gray-100 text-gray-700'}`}>{u.role || 'N/A'}</span>
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${roleColors[u.role as Role] || 'bg-gray-100 text-gray-700'}`}>{roleLabel(u.role || '')}</span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
@@ -456,11 +480,12 @@ export default function UserManagement() {
               ))}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Role</label>
-                <select value={formData.role || 'EMPLOYEE'} onChange={e => setFormData((p: any) => ({ ...p, role: e.target.value }))}
+                <select value={formData.role || 'employee'} onChange={e => setFormData((p: any) => ({ ...p, role: e.target.value }))}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white">
-                  <option value="EMPLOYEE">Employee</option>
-                  <option value="MANAGER">Manager</option>
-                  <option value="HR_ADMIN">HR Admin</option>
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="hr_admin">HR Admin</option>
+                <option value="intern">Interns</option>
                 </select>
               </div>
               <div>
@@ -600,13 +625,14 @@ export default function UserManagement() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Role *</label>
               <select 
-                value={formData.role || 'EMPLOYEE'} 
+                value={formData.role || 'employee'} 
                 onChange={e => setFormData((p: any) => ({ ...p, role: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
               >
-                <option value="EMPLOYEE">Employee</option>
-                <option value="MANAGER">Manager</option>
-                <option value="HR_ADMIN">HR Admin</option>
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="hr_admin">HR Admin</option>
+                <option value="intern">Interns</option>
               </select>
             </div>
             <div className="col-span-2">
@@ -652,8 +678,52 @@ export default function UserManagement() {
           </div>
         </div>
       </Modal>
+
+      <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 className="font-bold text-gray-900 mb-3">Department Change Requests</h3>
+        <div className="space-y-2">
+          {departmentRequests.filter((r) => r.status === "PENDING").slice(0, 8).map((r) => (
+            <div key={r._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div className="text-sm">
+                <p className="font-semibold text-gray-900">{r.userId?.name}</p>
+                <p className="text-xs text-gray-500">{r.oldDepartment} to {r.newDepartment}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    await adminService.confirmDepartmentChange(r._id);
+                    const refreshed = await adminService.getDepartmentChangeRequests();
+                    setDepartmentRequests(refreshed.data.requests || []);
+                    await fetchUsers();
+                  }}
+                  className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={async () => {
+                    await adminService.rejectDepartmentChange(r._id);
+                    const refreshed = await adminService.getDepartmentChangeRequests();
+                    setDepartmentRequests(refreshed.data.requests || []);
+                  }}
+                  className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+          {departmentRequests.filter((r) => r.status === "PENDING").length === 0 && (
+            <p className="text-sm text-gray-500">No pending department change requests.</p>
+          )}
+        </div>
+      </div>
         </>
       )}
     </DashboardLayout>
   );
 }
+
+
+
+

@@ -1,15 +1,5 @@
-const nodemailer = require("nodemailer");
 const logger = require("../utils/logger");
-
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || "smtp.gmail.com",
-  port: process.env.EMAIL_PORT || 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-});
+const mailer = require("./mailer");
 
 exports.sendEmail = async ({ to, subject, html, text }) => {
   try {
@@ -21,9 +11,7 @@ exports.sendEmail = async ({ to, subject, html, text }) => {
       text,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    logger.info(`Email sent to ${to}: ${info.messageId}`);
-    return info;
+    return await mailer.sendMail(mailOptions);
   } catch (error) {
     logger.error(`Email send failed to ${to}:`, error.message);
     throw error;
@@ -78,3 +66,6 @@ exports.sendLeaveNotificationEmail = async (to, type, data) => {
     logger.error(`Failed to send leave notification email to ${to}:`, error.message);
   }
 };
+
+exports.getCapturedEmails = mailer.getCapturedEmails;
+exports.clearCapturedEmails = mailer.clearCapturedEmails;

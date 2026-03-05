@@ -55,7 +55,7 @@ export default function EmployeeDashboard() {
       <DashboardLayout
         title={`Welcome back, ${currentUser.name.split(" ")[0]}! 👋`}
         subtitle={`${currentUser.designation} · ${currentUser.department}`}
-        allowedRoles={["EMPLOYEE", "MANAGER", "HR_ADMIN"]}
+        allowedRoles={["EMPLOYEE", "INTERN", "MANAGER", "HR_ADMIN"]}
       >
         <div className="animate-in fade-in duration-300">
           {/* Loading skeleton for stats */}
@@ -100,14 +100,16 @@ export default function EmployeeDashboard() {
   console.log("EmployeeDashboard - Total Leave Requests:", leaveRequests.length);
   console.log("EmployeeDashboard - My Requests:", myRequests.length);
   
-  const pending = myRequests.filter((r) => r.status === "PENDING").length;
+  const pending = myRequests.filter((r) => r.status === "PENDING" || r.status === "HR_PENDING").length;
   const approved = myRequests.filter((r) => r.status === "APPROVED").length;
   const rejected = myRequests.filter((r) => r.status === "REJECTED").length;
   const totalDaysUsed = myRequests.filter((r) => r.status === "APPROVED").reduce((s, r) => s + r.totalDays, 0);
   const recent = [...myRequests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
 
   // Use dynamic balances from API
-  const balances = leaveBalances.map((lb) => ({
+  const balances = leaveBalances
+    .filter((lb) => lb.leaveType.code !== "CL")
+    .map((lb) => ({
     id: lb.leaveType._id,
     code: lb.leaveType.code,
     name: lb.leaveType.name,
@@ -118,7 +120,13 @@ export default function EmployeeDashboard() {
     available: lb.available,
     accrualRate: lb.leaveType.accrualRate,
     accrualType: lb.leaveType.accrualType,
+    yearlyTotal: lb.leaveType.yearlyTotal || 0,
   }));
+
+  const accrualLabel = (b: any) => {
+    if (b.code === "EL") return `${b.yearlyTotal || 15}/yr`;
+    return `${b.accrualRate}/${b.accrualType === "YEARLY" ? "yr" : "mo"}`;
+  };
 
   const lowBalance = balances.filter((b) => b.balance <= 2);
 
@@ -126,7 +134,7 @@ export default function EmployeeDashboard() {
     <DashboardLayout
       title={`Welcome back, ${currentUser.name.split(" ")[0]}! 👋`}
       subtitle={`${currentUser.designation} · ${currentUser.department}`}
-      allowedRoles={["EMPLOYEE", "MANAGER", "HR_ADMIN"]}
+      allowedRoles={["EMPLOYEE", "INTERN", "MANAGER", "HR_ADMIN"]}
     >
       {/* Low balance alert */}
       {lowBalance.length > 0 && (
@@ -162,7 +170,7 @@ export default function EmployeeDashboard() {
                   <div key={b.id} className="rounded-xl border border-gray-100 p-3 hover:shadow-sm transition-shadow">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: b.color }}>{b.code}</span>
-                      <span className="text-xs text-gray-400">{b.accrualRate}/{b.accrualType === 'YEARLY' ? 'yr' : 'mo'}</span>
+                      <span className="text-xs text-gray-400">{accrualLabel(b)}</span>
                     </div>
                     <p className="text-2xl font-bold text-gray-900">{b.balance}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{b.name}</p>
@@ -264,3 +272,4 @@ export default function EmployeeDashboard() {
     </DashboardLayout>
   );
 }
+

@@ -54,21 +54,6 @@ export const AuthLayout = ({ children }: { children: ReactNode }) => (
             </div>
           ))}
         </div>
-
-        <div className="text-xs text-blue-400 mt-8">
-          <p className="mb-2 font-semibold text-blue-300">Demo Credentials:</p>
-          {[
-            ["Employee", "employee@demo.com"],
-            ["Manager", "manager@demo.com"],
-            ["HR Admin", "admin@demo.com"],
-          ].map(([role, email]) => (
-            <div key={role} className="flex justify-between mb-1">
-              <span className="text-blue-300">{role}:</span>
-              <span>{email}</span>
-            </div>
-          ))}
-          <p className="mt-1 text-blue-400">Password: <span className="text-blue-200">password</span></p>
-        </div>
       </div>
 
       {/* Right Form Panel */}

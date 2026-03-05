@@ -1,68 +1,195 @@
 const Notification = require("../models/Notification");
+const NotificationLog = require("../models/NotificationLog");
+const User = require("../models/User");
 const { sendEmail } = require("./emailService");
 const logger = require("../utils/logger");
+const { canonicalRole } = require("../utils/roles");
 
-/**
- * Send leave notification email
- */
-exports.sendLeaveNotificationEmail = async (to, type, data) => {
+async function createInAppNotification(userId, message, type = "INFO", relatedLeaveRequest = null) {
+  return Notification.create({
+    user: userId,
+    message,
+    type,
+    relatedLeaveRequest,
+  });
+}
+
+async function sendEmailWithFallback({
+  event,
+  recipientUserId = null,
+  recipientEmail,
+  leaveRequestId = null,
+  subject,
+  html,
+  payload = {},
+}) {
+  const logEntry = await NotificationLog.create({
+    event,
+    channel: "EMAIL",
+    recipientUserId,
+    recipientEmail,
+    leaveRequestId,
+    status: "PENDING",
+    payload,
+  });
+
   try {
-    let subject, html;
+    await sendEmail({ to: recipientEmail, subject, html });
+    logEntry.status = "SENT";
+    await logEntry.save();
+    return { success: true };
+  } catch (error) {
+    logEntry.status = "FAILED";
+    logEntry.error = error.message || "Unknown email error";
+    await logEntry.save();
+    logger.error(`Email failed for ${recipientEmail}: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
 
-    switch (type) {
-      case "new_request":
-        subject = `New Leave Request from ${data.employee}`;
-        html = `
-          <h3>New Leave Request</h3>
-          <p><strong>${data.employee}</strong> has applied for <strong>${data.leaveType}</strong>.</p>
-          <ul>
-            <li>Duration: ${data.totalDays} day(s)</li>
-            <li>From: ${data.fromDate}</li>
-            <li>To: ${data.toDate}</li>
-          </ul>
-          <p>Please review and take action.</p>
-        `;
-        break;
+function leaveEventTemplate(event, data) {
+  if (event === "APPLY") {
+    const reasonLine = data.reason ? `<p><strong>Reason:</strong> ${data.reason}</p>` : "";
+    const reviewLine = data.reviewLink ? `<p><a href="${data.reviewLink}">Review request</a></p>` : "";
+    return {
+      subject: `New Leave Request from ${data.employeeName}`,
+      html: `<p>${data.employeeName} applied for ${data.leaveType}.</p>
+<p><strong>Dates:</strong> ${data.fromDate} to ${data.toDate}</p>
+<p><strong>Days:</strong> ${data.totalDays}</p>
+${reasonLine}
+${reviewLine}`,
+    };
+  }
+  if (event === "APPROVED") {
+    return {
+      subject: "Leave Request Approved",
+      html: `<p>Your ${data.leaveType} request for ${data.totalDays} day(s) was approved by ${data.actorName}.</p>`,
+    };
+  }
+  if (event === "REJECTED") {
+    return {
+      subject: "Leave Request Rejected",
+      html: `<p>Your ${data.leaveType} request was rejected by ${data.actorName}. Reason: ${data.comment || "-"}</p>`,
+    };
+  }
+  return {
+    subject: "Leave Request Cancelled",
+    html: `<p>Your ${data.leaveType} request was cancelled.</p>`,
+  };
+}
 
-      case "approved":
-        subject = "Leave Request Approved";
-        html = `
-          <h3>Leave Request Approved</h3>
-          <p>Your <strong>${data.leaveType}</strong> request for <strong>${data.totalDays} day(s)</strong> has been approved by <strong>${data.approverName}</strong>.</p>
-        `;
-        break;
+async function notifyLeaveEvent({
+  event,
+  leaveRequest,
+  actor,
+  employee,
+  managerId = null,
+  hrOnly = false,
+  comment = "",
+}) {
+  const payload = {
+    employeeName: employee.name,
+    leaveType: leaveRequest.leaveType.name,
+    totalDays: leaveRequest.totalDays,
+    fromDate: leaveRequest.fromDate.toISOString().split("T")[0],
+    toDate: leaveRequest.toDate.toISOString().split("T")[0],
+    actorName: actor?.name || "",
+    comment,
+    reason: leaveRequest.reason || "",
+    reviewLink: (process.env.FRONTEND_URL || "http://localhost:3000") + "/hr/requests",
+  };
+  const tpl = leaveEventTemplate(event, payload);
 
-      case "rejected":
-        subject = "Leave Request Rejected";
-        html = `
-          <h3>Leave Request Rejected</h3>
-          <p>Your <strong>${data.leaveType}</strong> request has been rejected by <strong>${data.approverName}</strong>.</p>
-          <p><strong>Reason:</strong> ${data.reason}</p>
-        `;
-        break;
-
-      default:
-        return;
+  if (event === "APPLY") {
+    const recipients = [];
+    const dedupe = new Set();
+    if (managerId) {
+      const manager = await User.findById(managerId).select("email role");
+      if (manager?.email) {
+        const key = String(manager.email).toLowerCase();
+        if (!dedupe.has(key)) {
+          dedupe.add(key);
+          recipients.push({
+            userId: managerId,
+            email: manager.email,
+            reviewLink:
+              (process.env.FRONTEND_URL || "http://localhost:3000") +
+              `/manager/requests?leaveId=${leaveRequest._id}`,
+          });
+        }
+      }
     }
-
-    await sendEmail({ to, subject, html });
-  } catch (error) {
-    logger.error(`Failed to send leave notification email to ${to}:`, error.message);
-  }
-};
-
-/**
- * Create in-app notification
- */
-exports.createNotification = async (userId, message, type = "INFO", relatedLeaveRequest = null) => {
-  try {
-    await Notification.create({
-      user: userId,
-      message,
-      type,
-      relatedLeaveRequest,
+    const hrAdmins = await User.find({ role: { $in: ["HR_ADMIN", "hr_admin", "ADMIN", "HR"] }, isActive: true }).select("email");
+    hrAdmins.forEach((hr) => {
+      const key = String(hr.email).toLowerCase();
+      if (!dedupe.has(key)) {
+        dedupe.add(key);
+        recipients.push({
+          userId: hr._id,
+          email: hr.email,
+          reviewLink:
+            (process.env.FRONTEND_URL || "http://localhost:3000") +
+            `/hr/requests?leaveId=${leaveRequest._id}`,
+        });
+      }
     });
-  } catch (error) {
-    logger.error("Failed to create notification:", error.message);
+
+    for (const recipient of recipients) {
+      await createInAppNotification(
+        recipient.userId,
+        `${employee.name} applied for ${leaveRequest.leaveType.name}.`,
+        "WARNING",
+        leaveRequest._id
+      );
+      await sendEmailWithFallback({
+        event,
+        recipientUserId: recipient.userId,
+        recipientEmail: recipient.email,
+        leaveRequestId: leaveRequest._id,
+        subject: tpl.subject,
+        html: leaveEventTemplate(event, { ...payload, reviewLink: recipient.reviewLink }).html,
+        payload: { ...payload, reviewLink: recipient.reviewLink },
+      });
+    }
+    return;
   }
+
+  // For other events, notify employee and HR admins
+  await createInAppNotification(
+    employee._id,
+    `Your ${leaveRequest.leaveType.name} request is ${leaveRequest.status.toLowerCase()}.`,
+    leaveRequest.status === "APPROVED" ? "SUCCESS" : leaveRequest.status === "REJECTED" ? "DANGER" : "INFO",
+    leaveRequest._id
+  );
+
+  await sendEmailWithFallback({
+    event,
+    recipientUserId: employee._id,
+    recipientEmail: employee.email,
+    leaveRequestId: leaveRequest._id,
+    subject: tpl.subject,
+    html: tpl.html,
+    payload,
+  });
+
+  if (!hrOnly) {
+    const hrAdmins = await User.find({ role: { $in: ["HR_ADMIN", "hr_admin", "ADMIN", "HR"] }, isActive: true }).select("email");
+    for (const hr of hrAdmins) {
+      await sendEmailWithFallback({
+        event,
+        recipientUserId: hr._id,
+        recipientEmail: hr.email,
+        leaveRequestId: leaveRequest._id,
+        subject: `[FYI] ${tpl.subject}`,
+        html: tpl.html,
+        payload,
+      });
+    }
+  }
+}
+
+module.exports = {
+  createInAppNotification,
+  sendEmailWithFallback,
+  notifyLeaveEvent,
 };

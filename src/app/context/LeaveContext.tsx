@@ -20,7 +20,7 @@ interface LeaveRequest {
   totalDays: number;
   halfDay: boolean;
   reason: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  status: 'PENDING' | 'HR_PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
   approvalHistory: any[];
   comments?: string;
   createdAt: string;
@@ -35,6 +35,8 @@ interface LeaveType {
   description?: string;
   accrualType: string;
   accrualRate: number;
+  accrualPerMonth?: number;
+  yearlyTotal?: number;
   carryForwardLimit: number;
   allowNegativeBalance: boolean;
   applicableDuringProbation: boolean;
@@ -82,6 +84,7 @@ interface LeaveContextType {
 }
 
 const LeaveContext = createContext<LeaveContextType | undefined>(undefined);
+const roleKey = (role?: string) => String(role || "").toUpperCase();
 
 export const LeaveProvider = ({ children }: { children: ReactNode }) => {
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
@@ -103,7 +106,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       
       let response;
-      if (user.role === 'HR_ADMIN' || user.role === 'MANAGER') {
+      if (roleKey(user.role) === 'HR_ADMIN' || roleKey(user.role) === 'MANAGER') {
         // HR and Manager get all leaves
         response = await leaveService.getAllLeaves();
       } else {
@@ -138,6 +141,17 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
       const transformedTypes = (response.data.leaveTypes || []).map((lt: any) => ({
         ...lt,
         id: lt._id || lt.id,
+        code: String(lt.code || "").toUpperCase(),
+        name: lt.name || "",
+        color: lt.color || "#3B82F6",
+        description: lt.description || "",
+        accrualType: String(lt.accrualType || "").toUpperCase() || "YEARLY",
+        accrualRate: Number(lt.accrualRate ?? lt.accrualPerMonth ?? lt.accrual ?? 0),
+        accrualPerMonth: Number(lt.accrualPerMonth ?? (String(lt.accrualType || "").toUpperCase() === "MONTHLY" ? lt.accrualRate : 0) ?? 0),
+        yearlyTotal: Number(lt.yearlyTotal ?? lt.accrualPerYear ?? 0),
+        carryForwardLimit: Number(lt.carryForwardLimit ?? 0),
+        maxConsecutiveDays: Number(lt.maxConsecutiveDays ?? lt.maxConsecutive ?? 30),
+        isActive: lt.isActive !== undefined ? Boolean(lt.isActive) : lt.active !== undefined ? Boolean(lt.active) : true,
       }));
       setLeaveTypes(transformedTypes);
     } catch (error) {
@@ -185,7 +199,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
           
           // Fetch users for HR and Manager roles
           const user = JSON.parse(localStorage.getItem('user') || '{}');
-          if (user.role === 'HR_ADMIN' || user.role === 'MANAGER') {
+          if (roleKey(user.role) === 'HR_ADMIN' || roleKey(user.role) === 'MANAGER') {
             await fetchUsers();
           }
         } catch (error) {
@@ -205,13 +219,14 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
 
   const submitLeaveRequest = async (data: any): Promise<{ success: boolean; message: string }> => {
     try {
-      await leaveService.applyLeave(data);
+      const response = await leaveService.applyLeave(data);
       await Promise.all([fetchLeaveRequests(), fetchDashboardStats()]);
       // Trigger balance refresh in AuthContext
       window.dispatchEvent(new CustomEvent('refreshBalances'));
       // Broadcast refresh event for all components
       window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
-      return { success: true, message: "Leave request submitted successfully!" };
+      const emailNote = response?.data?.notificationsQueued ? " Email sent to manager & HR." : "";
+      return { success: true, message: `${response?.message || "Leave request submitted successfully!"}${emailNote}` };
     } catch (error: any) {
       const message = error.response?.data?.message || "Failed to submit leave request.";
       return { success: false, message };
@@ -290,7 +305,9 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
   const updateLeaveType = async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
     try {
       await leaveTypeService.updateLeaveType(id, data);
-      await fetchLeaveTypes();
+      await Promise.all([fetchLeaveTypes(), fetchDashboardStats()]);
+      window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
+      window.dispatchEvent(new CustomEvent('refreshBalances'));
       return { success: true, message: "Leave type updated successfully!" };
     } catch (error: any) {
       const message = error.response?.data?.message || "Failed to update leave type.";
@@ -322,7 +339,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
         fetchDashboardStats(),
       ];
       
-      if (user.role === 'HR_ADMIN' || user.role === 'MANAGER') {
+      if (roleKey(user.role) === 'HR_ADMIN' || roleKey(user.role) === 'MANAGER') {
         promises.push(fetchUsers());
       }
       

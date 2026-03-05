@@ -13,6 +13,7 @@ import { toast } from "sonner";
 export default function AllRequests() {
   const { leaveRequests, allUsers, leaveTypes, approveLeave, rejectLeave, fetchLeaveRequests, fetchDashboardStats, isLoading, refreshAllData } = useLeave();
   const { currentUser } = useAuth();
+  const roleKey = String(currentUser?.role || "").toUpperCase();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [deptFilter, setDeptFilter] = useState("ALL");
@@ -81,6 +82,8 @@ export default function AllRequests() {
   }).sort((a, b) => {
     if (a.status === "PENDING" && b.status !== "PENDING") return -1;
     if (b.status === "PENDING" && a.status !== "PENDING") return 1;
+    if (a.status === "HR_PENDING" && b.status !== "HR_PENDING") return -1;
+    if (b.status === "HR_PENDING" && a.status !== "HR_PENDING") return 1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
@@ -100,8 +103,8 @@ export default function AllRequests() {
       
       console.log("HR Override Approve - Response:", response);
       
-      if (response.data?.success !== false) {
-        toast.success(response.data?.message || "Leave request approved successfully");
+      if (response?.success !== false) {
+        toast.success(response?.message || "Leave request approved successfully");
         setSelectedRequest(null);
         
         // Immediate refresh of all data
@@ -113,7 +116,7 @@ export default function AllRequests() {
         // Broadcast update to all listening components
         window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
       } else {
-        toast.error(response.data?.message || "Failed to approve leave request");
+        toast.error(response?.message || "Failed to approve leave request");
       }
     } catch (error: any) {
       console.error("Error approving leave:", error);
@@ -141,8 +144,8 @@ export default function AllRequests() {
       
       console.log("HR Override Reject - Response:", response);
       
-      if (response.data?.success !== false) {
-        toast.success(response.data?.message || "Leave request rejected successfully");
+      if (response?.success !== false) {
+        toast.success(response?.message || "Leave request rejected successfully");
         setRejectModal(null);
         setRejectComment("");
         
@@ -155,7 +158,7 @@ export default function AllRequests() {
         // Broadcast update to all listening components
         window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
       } else {
-        toast.error(response.data?.message || "Failed to reject leave request");
+        toast.error(response?.message || "Failed to reject leave request");
       }
     } catch (error: any) {
       console.error("Error rejecting leave:", error);
@@ -194,6 +197,7 @@ export default function AllRequests() {
   const counts = { 
     ALL: leaveRequests.length, 
     PENDING: leaveRequests.filter(r => r.status === "PENDING").length, 
+    HR_PENDING: leaveRequests.filter(r => r.status === "HR_PENDING").length,
     APPROVED: leaveRequests.filter(r => r.status === "APPROVED").length, 
     REJECTED: leaveRequests.filter(r => r.status === "REJECTED").length 
   };
@@ -202,7 +206,7 @@ export default function AllRequests() {
     <DashboardLayout title="All Leave Requests" subtitle="System-wide leave request management" allowedRoles={["HR_ADMIN", "MANAGER"]}>
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-gray-100 rounded-2xl mb-5 w-fit">
-        {["ALL", "PENDING", "APPROVED", "REJECTED"].map(s => (
+        {["ALL", "PENDING", "HR_PENDING", "APPROVED", "REJECTED"].map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${statusFilter === s ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
             {s} ({counts[s as keyof typeof counts]})
@@ -226,7 +230,7 @@ export default function AllRequests() {
           {leaveTypes.map(lt => <option key={lt._id || lt.id} value={lt._id || lt.id}>{lt.name}</option>)}
         </select>
         <Link 
-          to={currentUser?.role === "MANAGER" ? "/manager/leave-types" : "/hr/policies"} 
+          to={roleKey === "MANAGER" ? "/manager/leave-types" : "/hr/policies"} 
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"
         >
           <Settings className="w-4 h-4" /> Manage Leave Types
@@ -238,7 +242,7 @@ export default function AllRequests() {
 
       <div className="mb-3 flex justify-between items-center">
         <span className="text-sm text-gray-500">{filtered.length} requests</span>
-        {currentUser?.role === "HR_ADMIN" && (
+        {roleKey === "HR_ADMIN" && (
           <div className="flex items-center gap-2 text-xs text-purple-700 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-100">
             <CheckCircle className="w-3.5 h-3.5" /> HR Admin can override any approval decision
           </div>
@@ -283,15 +287,28 @@ export default function AllRequests() {
                     <td className="px-4 py-3"><LeaveStatusBadge status={r.status} size="sm" /></td>
                     <td className="px-4 py-3 text-xs text-gray-500">{formatDate(r.createdAt)}</td>
                     <td className="px-4 py-3">
+                      {(() => {
+                        const rowRole = String(r.employee?.role || "").toUpperCase();
+                        const isInternRequest = rowRole === "INTERN";
+                        const canApprove = roleKey === "HR_ADMIN" && ["PENDING", "HR_PENDING", "REJECTED"].includes(r.status);
+                        const canReject = roleKey === "HR_ADMIN" && ["PENDING", "HR_PENDING", "APPROVED"].includes(r.status);
+                        return (
                       <div className="flex gap-1.5">
                         <button onClick={() => setSelectedRequest(r)} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"><Eye className="w-3.5 h-3.5" /></button>
-                        {r.status !== "APPROVED" && (
+                        {canApprove && (
                           <button onClick={() => setSelectedRequest(r)} className="p-1.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 transition-colors"><CheckCircle className="w-3.5 h-3.5" /></button>
                         )}
-                        {r.status !== "REJECTED" && (
+                        {canReject && (
                           <button onClick={() => { setRejectModal(r); setRejectComment(""); }} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors"><XCircle className="w-3.5 h-3.5" /></button>
                         )}
+                        {roleKey === "MANAGER" && isInternRequest && (
+                          <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
+                            HR Required
+                          </span>
+                        )}
                       </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -303,7 +320,7 @@ export default function AllRequests() {
 
       {/* Detail/Override Modal */}
       {selectedRequest && (
-        <Modal isOpen={!!selectedRequest} onClose={() => setSelectedRequest(null)} title={currentUser?.role === "HR_ADMIN" ? "Request Details + HR Override" : "Request Details"} size="lg">
+        <Modal isOpen={!!selectedRequest} onClose={() => setSelectedRequest(null)} title={roleKey === "HR_ADMIN" ? "Request Details + HR Override" : "Request Details"} size="lg">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {[
@@ -352,13 +369,13 @@ export default function AllRequests() {
                 </div>
               </div>
             )}
-            {currentUser?.role === "HR_ADMIN" && (
+            {roleKey === "HR_ADMIN" && (
               <div className="border-t border-gray-100 pt-4">
                 <p className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <ShieldCheck className="w-3.5 h-3.5" /> HR Admin Override
+                  <ShieldCheck className="w-3.5 h-3.5" /> {String(selectedRequest?.employee?.role || "").toUpperCase() === "INTERN" ? "HR Final Approval" : "HR Admin Override"}
                 </p>
                 <div className="flex gap-3">
-                  {selectedRequest.status !== "APPROVED" && (
+                  {["PENDING", "HR_PENDING", "REJECTED"].includes(selectedRequest.status) && (
                     <button 
                       onClick={() => handleOverrideApprove(selectedRequest)} 
                       disabled={isProcessing}
@@ -366,7 +383,7 @@ export default function AllRequests() {
                       <CheckCircle className="w-4 h-4" /> {isProcessing ? 'Processing...' : 'Override Approve'}
                     </button>
                   )}
-                  {selectedRequest.status !== "REJECTED" && (
+                  {["PENDING", "HR_PENDING", "APPROVED"].includes(selectedRequest.status) && (
                     <button 
                       onClick={() => { setRejectModal(selectedRequest); setSelectedRequest(null); }} 
                       disabled={isProcessing}

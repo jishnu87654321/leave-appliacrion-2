@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { AppError } = require("./errorHandler");
+const { canonicalRole } = require("../utils/roles");
 
 exports.protect = async (req, res, next) => {
   try {
@@ -27,7 +28,8 @@ exports.protect = async (req, res, next) => {
     }
 
     // Fetch user
-    const user = await User.findById(decoded.id).select("+password");
+    const tokenUserId = decoded.id || decoded.userId;
+    const user = await User.findById(tokenUserId).select("+password");
     if (!user) return next(new AppError("User no longer exists.", 401));
 
     // Check if user is active
@@ -38,6 +40,7 @@ exports.protect = async (req, res, next) => {
       return next(new AppError("Password was recently changed. Please login again.", 401));
     }
 
+    user.role = canonicalRole(user.role);
     req.user = user;
     next();
   } catch (error) {
@@ -49,8 +52,9 @@ exports.protect = async (req, res, next) => {
  * Generate JWT token
  */
 exports.generateToken = (userId, expiresIn = "7d") => {
+  const payload = typeof userId === "object" && userId !== null ? userId : { id: userId };
   return jwt.sign(
-    { id: userId },
+    payload,
     process.env.JWT_SECRET || "your_super_secret_jwt_key_here_change_in_production",
     { expiresIn }
   );
@@ -64,10 +68,13 @@ exports.optionalAuth = async (req, res, next) => {
     const token = req.headers.authorization?.split(" ")[1];
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_super_secret_jwt_key_here_change_in_production");
-      req.user = await User.findById(decoded.id);
+      req.user = await User.findById(decoded.id || decoded.userId);
     }
     next();
   } catch {
     next();
   }
 };
+
+// Aliases for projects that expect these names.
+exports.requireAuth = exports.protect;

@@ -7,7 +7,7 @@ interface User {
   _id: string;
   name: string;
   email: string;
-  role: 'EMPLOYEE' | 'MANAGER' | 'HR_ADMIN';
+  role: 'EMPLOYEE' | 'INTERN' | 'MANAGER' | 'HR_ADMIN' | 'HR' | 'ADMIN' | 'employee' | 'intern' | 'manager' | 'hr_admin';
   department: string;
   designation?: string;
   leaveBalances: any[];
@@ -23,11 +23,21 @@ interface LeaveBalance {
     color: string;
     accrualRate: number;
     accrualType: string;
+    accrualPerMonth?: number;
+    yearlyTotal?: number;
+    carryForwardLimit?: number;
+    maxConsecutiveDays?: number;
   };
   balance: number;
   used: number;
   pending: number;
   available: number;
+  earned_leave?: number;
+  sick_leave?: number;
+  casual_leave?: number;
+  earnedLeave?: number;
+  sickLeave?: number;
+  casualLeave?: number;
 }
 
 interface Notification {
@@ -52,6 +62,16 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
   leaveBalances: LeaveBalance[];
+  creditInfo: {
+    lastCreditedMonth: string | null;
+    nextCreditDate: string | null;
+    creditDay: number;
+  } | null;
+  balanceSummary: {
+    earned_leave: number;
+    sick_leave: number;
+    casual_leave: number;
+  };
   fetchLeaveBalances: () => Promise<void>;
 }
 
@@ -62,6 +82,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
+  const [creditInfo, setCreditInfo] = useState<{ lastCreditedMonth: string | null; nextCreditDate: string | null; creditDay: number } | null>(null);
+  const [balanceSummary, setBalanceSummary] = useState({ earned_leave: 0, sick_leave: 0, casual_leave: 0 });
 
   useEffect(() => {
     const initAuth = async () => {
@@ -119,8 +141,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     
     try {
       const user = JSON.parse(storedUser);
-      const response = await userService.getUserBalances(user._id);
+      const userId = user?._id || user?.id;
+      if (!userId) return;
+      const response = await userService.getUserBalances(userId);
       setLeaveBalances(response.data.balances || []);
+      setCreditInfo(response.data.creditInfo || null);
+      setBalanceSummary({
+        earned_leave: Number(response.data.earned_leave || 0),
+        sick_leave: Number(response.data.sick_leave || 0),
+        casual_leave: Number(response.data.casual_leave || 0),
+      });
     } catch (error) {
       console.error("Failed to fetch leave balances:", error);
     }
@@ -157,6 +187,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setCurrentUser(null);
       setNotifications([]);
       setLeaveBalances([]);
+      setCreditInfo(null);
+      setBalanceSummary({ earned_leave: 0, sick_leave: 0, casual_leave: 0 });
     }
   };
 
@@ -206,6 +238,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         refreshUser,
         fetchNotifications,
         leaveBalances,
+        creditInfo,
+        balanceSummary,
         fetchLeaveBalances,
       }}
     >

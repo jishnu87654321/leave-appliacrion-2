@@ -30,13 +30,19 @@ export default function Login() {
     const result = await login(form.email, form.password);
     setLoading(false);
     if (result.success) {
-      // Get role from local storage user
-      const stored = localStorage.getItem("lms_user");
+      const stored = localStorage.getItem("user");
       const user = stored ? JSON.parse(stored) : null;
       const roleMap: Record<string, string> = {
         EMPLOYEE: "/employee/dashboard",
+        INTERN: "/intern/dashboard",
+        intern: "/intern/dashboard",
+        employee: "/employee/dashboard",
+        manager: "/manager/dashboard",
+        hr_admin: "/hr/dashboard",
         MANAGER: "/manager/dashboard",
         HR_ADMIN: "/hr/dashboard",
+        HR: "/hr/dashboard",
+        ADMIN: "/hr/dashboard",
       };
       navigate(user ? (roleMap[user.role] || "/employee/dashboard") : "/employee/dashboard", { replace: true });
     } else {

@@ -45,6 +45,7 @@ export default function ManagerDashboard() {
   }, [refreshAllData]);
   
   if (!currentUser) return null;
+  const currentUserId = (currentUser as any)._id || (currentUser as any).id;
 
   // Show loading state while data is being fetched
   if (isLoading) {
@@ -88,8 +89,8 @@ export default function ManagerDashboard() {
     );
   }
 
-  const teamMembers = allUsers.filter((u) => u.managerId === currentUser.id);
-  const teamIds = teamMembers.map((u) => u.id);
+  const teamMembers = allUsers.filter((u) => u.managerId === currentUserId || (u as any).managerId?._id === currentUserId);
+  const teamIds = teamMembers.map((u) => u.id || u._id).filter(Boolean);
   const teamRequests = leaveRequests.filter((r) => teamIds.includes(r.employeeId));
   const pending = teamRequests.filter((r) => r.status === "PENDING");
   const approved = teamRequests.filter((r) => r.status === "APPROVED").length;
@@ -246,3 +247,4 @@ export default function ManagerDashboard() {
     </DashboardLayout>
   );
 }
+

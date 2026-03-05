@@ -10,7 +10,7 @@ import type { LeaveRequest } from "../../data/mockData";
 import { toast } from "sonner";
 
 export default function TeamRequests() {
-  const { currentUser, addNotification } = useAuth();
+  const { currentUser } = useAuth();
   const { leaveRequests, allUsers, approveLeave, rejectLeave, refreshAllData } = useLeave();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("PENDING");
@@ -47,9 +47,10 @@ export default function TeamRequests() {
   console.log("TeamRequests - All Users:", allUsers);
 
   if (!currentUser) return null;
+  const currentUserId = (currentUser as any)._id || (currentUser as any).id;
 
-  const teamMembers = allUsers.filter((u) => u.managerId === currentUser.id);
-  const teamIds = teamMembers.map((u) => u.id);
+  const teamMembers = allUsers.filter((u) => u.managerId === currentUserId || (u as any).managerId?._id === currentUserId);
+  const teamIds = teamMembers.map((u) => u.id || u._id).filter(Boolean);
   const teamRequests = leaveRequests.filter((r) => teamIds.includes(r.employeeId));
 
   const filtered = teamRequests.filter((r) => {
@@ -59,10 +60,12 @@ export default function TeamRequests() {
   }).sort((a, b) => {
     if (a.status === "PENDING" && b.status !== "PENDING") return -1;
     if (b.status === "PENDING" && a.status !== "PENDING") return 1;
+    if (a.status === "HR_PENDING" && b.status !== "HR_PENDING") return -1;
+    if (b.status === "HR_PENDING" && a.status !== "HR_PENDING") return 1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
-  const counts = { ALL: teamRequests.length, PENDING: teamRequests.filter(r => r.status === "PENDING").length, APPROVED: teamRequests.filter(r => r.status === "APPROVED").length, REJECTED: teamRequests.filter(r => r.status === "REJECTED").length };
+  const counts = { ALL: teamRequests.length, PENDING: teamRequests.filter(r => r.status === "PENDING").length, HR_PENDING: teamRequests.filter(r => r.status === "HR_PENDING").length, APPROVED: teamRequests.filter(r => r.status === "APPROVED").length, REJECTED: teamRequests.filter(r => r.status === "REJECTED").length };
 
   const handleApprove = async (r: LeaveRequest) => {
     try {
@@ -131,7 +134,7 @@ export default function TeamRequests() {
     }
   };
 
-  const statusTabs = ["ALL", "PENDING", "APPROVED", "REJECTED"];
+  const statusTabs = ["ALL", "PENDING", "HR_PENDING", "APPROVED", "REJECTED"];
 
   return (
     <DashboardLayout title="Team Leave Requests" subtitle="Review and manage your team's leave applications" allowedRoles={["MANAGER", "HR_ADMIN"]}>
@@ -166,6 +169,9 @@ export default function TeamRequests() {
             const member = allUsers.find(u => u.id === r.employeeId || u._id === r.employeeId);
             const requestId = r.id || r._id;
             const isExpanded = expandedId === requestId;
+            const requestRole = String(member?.role || (r as any).employee?.role || "").toUpperCase();
+            const isInternRequest = requestRole === "INTERN";
+            const needsHrApproval = isInternRequest && r.status === "HR_PENDING";
             return (
               <div key={requestId} className={`bg-white rounded-2xl shadow-sm border overflow-hidden transition-all ${r.status === "PENDING" ? "border-amber-200" : "border-gray-100"}`}>
                 <div className="flex items-center gap-4 px-5 py-4">
@@ -223,7 +229,7 @@ export default function TeamRequests() {
                       className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
-                    {r.status === "PENDING" && (
+                    {r.status === "PENDING" && !isInternRequest && (
                       <>
                         <button onClick={() => { setSelectedRequest(r); }}
                           className="flex items-center gap-1.5 text-xs font-semibold bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-xl hover:bg-green-100 transition-colors">
@@ -234,6 +240,11 @@ export default function TeamRequests() {
                           <XCircle className="w-3.5 h-3.5" /> Reject
                         </button>
                       </>
+                    )}
+                    {needsHrApproval && (
+                      <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-xl">
+                        HR Approval Required
+                      </span>
                     )}
                     <button onClick={() => setSelectedRequest(r)}
                       className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
@@ -377,3 +388,4 @@ export default function TeamRequests() {
     </DashboardLayout>
   );
 }
+

@@ -4,7 +4,7 @@ export const leaveTypeService = {
   // Get all leave types
   getAllLeaveTypes: async (isActive?: boolean) => {
     const response = await api.get('/leave-types', {
-      params: isActive !== undefined ? { isActive } : {},
+      params: isActive !== undefined ? { isActive, _ts: Date.now() } : { _ts: Date.now() },
     });
     return response.data;
   },

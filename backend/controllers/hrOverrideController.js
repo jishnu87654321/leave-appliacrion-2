@@ -6,6 +6,8 @@ const AuditTrail = require("../models/AuditTrail");
 const Notification = require("../models/Notification");
 const { AppError } = require("../middleware/errorHandler");
 const { deductLeaveBalance, releasePending } = require("../services/leaveBalanceService");
+const { notifyLeaveEvent } = require("../services/notificationService");
+const { canonicalRole } = require("../utils/roles");
 
 /**
  * PUT /api/leaves/:id/override
@@ -48,7 +50,7 @@ exports.hrOverrideLeave = async (req, res, next) => {
 
     // Fetch leave request with populated fields
     const leaveRequest = await LeaveRequest.findById(leaveId)
-      .populate("employee", "name email department leaveBalances")
+      .populate("employee", "name email role department leaveBalances")
       .populate("leaveType", "name code color allowNegativeBalance")
       .session(session);
 
@@ -72,9 +74,12 @@ exports.hrOverrideLeave = async (req, res, next) => {
     }
 
     const previousStatus = leaveRequest.status;
+    const isInternLeave = canonicalRole(leaveRequest.employee.role) === "INTERN";
     const employee = leaveRequest.employee;
     const leaveType = leaveRequest.leaveType;
     const totalDays = leaveRequest.totalDays;
+
+    let eventForNotification = null;
 
     // Process based on status
     if (status === "APPROVED") {
@@ -93,6 +98,18 @@ exports.hrOverrideLeave = async (req, res, next) => {
       
       // Update leave request
       leaveRequest.status = "APPROVED";
+      leaveRequest.hrOverride = {
+        isOverridden: true,
+        overriddenBy: req.user._id,
+        overriddenAt: new Date(),
+        previousStatus,
+        reason: comment.trim(),
+      };
+      leaveRequest.hrFinalApproval = {
+        approvedBy: req.user._id,
+        approvedAt: new Date(),
+        decision: "APPROVED",
+      };
       leaveRequest.approvalHistory.push({
         level: leaveRequest.currentApprovalLevel + 1,
         approverId: req.user._id,
@@ -121,6 +138,8 @@ exports.hrOverrideLeave = async (req, res, next) => {
         type: "SUCCESS",
         relatedLeaveRequest: leaveRequest._id,
       }], { session });
+
+      eventForNotification = "APPROVED";
 
       // Create audit trail
       await AuditTrail.create([{
@@ -155,7 +174,7 @@ exports.hrOverrideLeave = async (req, res, next) => {
           balEntry.used -= totalDays;
           await employee.save({ session });
         }
-      } else if (previousStatus === "PENDING") {
+      } else if (previousStatus === "PENDING" || previousStatus === "HR_PENDING") {
         // Release pending balance
         await releasePending(
           employee._id,
@@ -168,6 +187,18 @@ exports.hrOverrideLeave = async (req, res, next) => {
       // Update leave request
       leaveRequest.status = "REJECTED";
       leaveRequest.comments = comment.trim();
+      leaveRequest.hrOverride = {
+        isOverridden: true,
+        overriddenBy: req.user._id,
+        overriddenAt: new Date(),
+        previousStatus,
+        reason: comment.trim(),
+      };
+      leaveRequest.hrFinalApproval = {
+        approvedBy: req.user._id,
+        approvedAt: new Date(),
+        decision: "REJECTED",
+      };
       leaveRequest.approvalHistory.push({
         level: leaveRequest.currentApprovalLevel + 1,
         approverId: req.user._id,
@@ -187,6 +218,8 @@ exports.hrOverrideLeave = async (req, res, next) => {
         type: "DANGER",
         relatedLeaveRequest: leaveRequest._id,
       }], { session });
+
+      eventForNotification = "REJECTED";
 
       // Create audit trail
       await AuditTrail.create([{
@@ -213,6 +246,17 @@ exports.hrOverrideLeave = async (req, res, next) => {
     await session.commitTransaction();
     session.endSession();
 
+    if (eventForNotification) {
+      await notifyLeaveEvent({
+        event: eventForNotification,
+        leaveRequest,
+        actor: req.user,
+        employee,
+        hrOnly: true,
+        comment: `[HR OVERRIDE] ${comment.trim()}`,
+      });
+    }
+
     // Fetch updated employee balances
     const updatedEmployee = await User.findById(employee._id)
       .select("leaveBalances")
@@ -221,11 +265,16 @@ exports.hrOverrideLeave = async (req, res, next) => {
     // Return success response - CRITICAL
     return res.status(200).json({
       success: true,
-      message: `Leave request ${status.toLowerCase()} successfully via HR override`,
+      message: isInternLeave
+        ? `Intern leave ${status.toLowerCase()} successfully by HR`
+        : `Leave request ${status.toLowerCase()} successfully via HR override`,
       data: {
         leaveRequest: {
           _id: leaveRequest._id,
           status: leaveRequest.status,
+          hrApprovedBy: leaveRequest.hrFinalApproval?.approvedBy || null,
+          hrApprovedAt: leaveRequest.hrFinalApproval?.approvedAt || null,
+          hrDecision: leaveRequest.hrFinalApproval?.decision || null,
           employee: {
             _id: employee._id,
             name: employee.name,

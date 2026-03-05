@@ -1,0 +1,53 @@
+{
+  "startedAt": "2026-03-04T18:00:19.574Z",
+  "passed": 5,
+  "failed": 0,
+  "skipped": 3,
+  "results": [
+    {
+      "name": "A) Policy verification",
+      "status": "PASS",
+      "details": "Earned Leave policy is 15/year and carry forward 30"
+    },
+    {
+      "name": "B) Apply leave without document",
+      "status": "PASS",
+      "details": "Leave application works without document"
+    },
+    {
+      "name": "C) Email notification",
+      "status": "PASS",
+      "details": "Leave apply triggered manager + HR emails"
+    },
+    {
+      "name": "D) Manager approve",
+      "status": "SKIP",
+      "details": "Manager approval check skipped: MongoDB transactions unavailable in this test DB."
+    },
+    {
+      "name": "E) HR override",
+      "status": "SKIP",
+      "details": "HR override check skipped: MongoDB transactions unavailable in this test DB."
+    },
+    {
+      "name": "F) Monthly credit + idempotency",
+      "status": "SKIP",
+      "details": "Monthly credit check skipped: MongoDB transactions unavailable in this test DB."
+    },
+    {
+      "name": "G) Balance endpoint",
+      "status": "PASS",
+      "details": "Balance API matches DB for employee and intern users"
+    },
+    {
+      "name": "H) Role access control (intern)",
+      "status": "PASS",
+      "details": "Intern access control works (blocked on privileged routes, allowed on employee routes)"
+    }
+  ],
+  "env": {
+    "apiBase": "http://localhost:5001",
+    "db": "TEST"
+  },
+  "endedAt": "2026-03-04T18:00:22.586Z"
+}

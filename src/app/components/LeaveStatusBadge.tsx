@@ -9,6 +9,7 @@ interface Props {
 
 const config: Record<LeaveStatus, { label: string; bg: string; text: string; icon: React.ElementType }> = {
   PENDING: { label: "Pending", bg: "bg-amber-100", text: "text-amber-700", icon: Clock },
+  HR_PENDING: { label: "Waiting for HR Approval", bg: "bg-indigo-100", text: "text-indigo-700", icon: Clock },
   APPROVED: { label: "Approved", bg: "bg-green-100", text: "text-green-700", icon: Check },
   REJECTED: { label: "Rejected", bg: "bg-red-100", text: "text-red-700", icon: X },
   CANCELLED: { label: "Cancelled", bg: "bg-gray-100", text: "text-gray-600", icon: Ban },

@@ -13,6 +13,7 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout = ({ children, title, subtitle, allowedRoles }: DashboardLayoutProps) => {
   const { currentUser, isLoading } = useAuth();
+  const normalizeRole = (role?: string) => String(role || "").trim().toUpperCase();
 
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 animate-in fade-in duration-300">
@@ -25,13 +26,16 @@ export const DashboardLayout = ({ children, title, subtitle, allowedRoles }: Das
 
   if (!currentUser) return <Navigate to="/login" replace />;
 
-  if (allowedRoles && !allowedRoles.includes(currentUser.role)) {
+  if (allowedRoles && !allowedRoles.map(normalizeRole).includes(normalizeRole(currentUser.role))) {
     const redirectMap: Record<string, string> = {
       EMPLOYEE: "/employee/dashboard",
+      INTERN: "/intern/dashboard",
       MANAGER: "/manager/dashboard",
       HR_ADMIN: "/hr/dashboard",
+      HR: "/hr/dashboard",
+      ADMIN: "/hr/dashboard",
     };
-    return <Navigate to={redirectMap[currentUser.role] || "/login"} replace />;
+    return <Navigate to={redirectMap[normalizeRole(currentUser.role)] || "/login"} replace />;
   }
 
   return (

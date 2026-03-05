@@ -2,14 +2,13 @@ import React, { useState } from "react";
 import { Bell, Search, ChevronDown, Check, Info, AlertTriangle, XCircle, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { formatRelative } from "../utils/dateUtils";
-import type { Notification } from "../data/mockData";
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
 }
 
-const NotifIcon = ({ type }: { type: Notification["type"] }) => {
+const NotifIcon = ({ type }: { type: "INFO" | "SUCCESS" | "WARNING" | "DANGER" }) => {
   const map = {
     INFO: <Info className="w-3.5 h-3.5 text-blue-500" />,
     SUCCESS: <Check className="w-3.5 h-3.5 text-green-500" />,
@@ -79,9 +78,9 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
                 ) : (
                   notifications.map((n) => (
                     <button
-                      key={n.id}
-                      onClick={() => markNotificationRead(n.id)}
-                      className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-all duration-200 flex gap-3 items-start border-b border-gray-50 ${!n.readStatus ? "bg-blue-50/50" : ""}`}
+                      key={n._id}
+                      onClick={() => markNotificationRead(n._id)}
+                      className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-all duration-200 flex gap-3 items-start border-b border-gray-50 ${!n.isRead ? "bg-blue-50/50" : ""}`}
                     >
                       <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
                         <NotifIcon type={n.type} />
@@ -90,7 +89,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
                         <p className="text-xs text-gray-700 leading-snug">{n.message}</p>
                         <p className="text-xs text-gray-400 mt-1">{formatRelative(n.createdAt)}</p>
                       </div>
-                      {!n.readStatus && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5" />}
+                      {!n.isRead && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5" />}
                     </button>
                   ))
                 )}

@@ -8,8 +8,12 @@
     "dev": "nodemon start.js",
     "seed": "node seeds/seedData.js",
     "seed:fresh": "node seeds/seedData.js && npm run dev",
+    "migrate:policy": "node scripts/migratePolicyChanges.js",
+    "migrate:legacy-leaves": "node scripts/migrateLegacyLeaveData.js",
+    "migrate:intern-role": "node scripts/migrateEmployeesToIntern.cjs",
     "db:init": "node scripts/initDatabase.js",
-    "db:check": "node scripts/initDatabase.js"
+    "db:check": "node scripts/initDatabase.js",
+    "test": "node --test --test-isolation=none tests/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

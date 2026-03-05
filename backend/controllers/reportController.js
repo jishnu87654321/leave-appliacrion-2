@@ -14,7 +14,7 @@ exports.employeeReport = async (req, res, next) => {
     if (startDate) dateFilter.$gte = new Date(startDate);
     if (endDate) dateFilter.$lte = new Date(endDate);
 
-    let userQuery = { role: { $ne: "HR_ADMIN" }, isActive: true };
+    let userQuery = { role: { $nin: ["HR_ADMIN", "hr_admin", "ADMIN", "HR"] }, isActive: true };
     if (department) userQuery.department = department;
     if (employeeId) userQuery._id = employeeId;
 
@@ -36,6 +36,16 @@ exports.employeeReport = async (req, res, next) => {
           else if (r.status === "REJECTED") byType[lt.code].rejected += 1;
         }
       });
+      const leaveTypeIdToCode = new Map(leaveTypes.map((lt) => [lt._id.toString(), lt.code]));
+      let earned_leave = 0;
+      let sick_leave = 0;
+      let casual_leave = 0;
+      (emp.leaveBalances || []).forEach((b) => {
+        const code = leaveTypeIdToCode.get(String(b.leaveTypeId));
+        if (code === "EL") earned_leave = b.balance || 0;
+        if (code === "SL") sick_leave = b.balance || 0;
+        if (code === "CL") casual_leave = b.balance || 0;
+      });
       return {
         employee: { id: emp._id, name: emp.name, email: emp.email, department: emp.department, designation: emp.designation },
         totalRequests: requests.length,
@@ -44,6 +54,12 @@ exports.employeeReport = async (req, res, next) => {
         totalRejected: requests.filter(r => r.status === "REJECTED").length,
         byType,
         balances: emp.leaveBalances,
+        earned_leave,
+        sick_leave,
+        casual_leave,
+        earnedLeave: earned_leave,
+        sickLeave: sick_leave,
+        casualLeave: casual_leave,
       };
     }));
 

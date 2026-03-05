@@ -89,7 +89,7 @@ export default function LeaveHistory() {
   };
 
   return (
-    <DashboardLayout title="My Leave Requests" subtitle="Track status of all your leave applications" allowedRoles={["EMPLOYEE", "MANAGER", "HR_ADMIN"]}>
+    <DashboardLayout title="My Leave Requests" subtitle="Track status of all your leave applications" allowedRoles={["EMPLOYEE", "INTERN", "MANAGER", "HR_ADMIN"]}>
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-5 flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -101,6 +101,7 @@ export default function LeaveHistory() {
           className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white">
           <option value="ALL">All Status</option>
           <option value="PENDING">Pending</option>
+          <option value="HR_PENDING">Waiting for HR Approval</option>
           <option value="APPROVED">Approved</option>
           <option value="REJECTED">Rejected</option>
           <option value="CANCELLED">Cancelled</option>
@@ -153,7 +154,7 @@ export default function LeaveHistory() {
                 <div className="flex-shrink-0"><LeaveStatusBadge status={r.status} /></div>
                 <div className="flex gap-2 flex-shrink-0">
                   <button onClick={() => setSelectedRequest(r)} className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors">Details</button>
-                  {r.status === "PENDING" && (
+                  {(r.status === "PENDING" || r.status === "HR_PENDING") && (
                     <button onClick={() => setCancelConfirm(r.id)} className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">Cancel</button>
                   )}
                 </div>
@@ -242,3 +243,4 @@ export default function LeaveHistory() {
     </DashboardLayout>
   );
 }
+

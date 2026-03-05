@@ -7,6 +7,8 @@ const leaveTypeSchema = new mongoose.Schema({
   description: { type: String, trim: true, default: "" },
   accrualType: { type: String, enum: ["MONTHLY", "YEARLY", "NONE"], default: "YEARLY" },
   accrualRate: { type: Number, default: 0, min: 0, max: 365 },
+  accrualPerMonth: { type: Number, default: 0, min: 0, max: 31 },
+  yearlyTotal: { type: Number, default: 0, min: 0, max: 365 },
   carryForwardLimit: { type: Number, default: 0, min: 0 },
   allowNegativeBalance: { type: Boolean, default: false },
   applicableDuringProbation: { type: Boolean, default: true },

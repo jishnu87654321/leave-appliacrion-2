@@ -21,41 +21,55 @@ const employeeNav: NavItem[] = [
   { label: "Team Calendar", to: "/employee/team-calendar", icon: Calendar },
 ];
 
+const internNav: NavItem[] = [
+  { label: "Dashboard", to: "/intern/dashboard", icon: LayoutDashboard },
+  { label: "Apply Leave", to: "/intern/apply-leave", icon: FilePlus },
+  { label: "Leave Balance", to: "/employee/leave-balance", icon: Wallet },
+  { label: "My Requests", to: "/employee/leave-history", icon: ClipboardList },
+  { label: "Team Calendar", to: "/employee/team-calendar", icon: Calendar },
+];
+
 const managerNav: NavItem[] = [
   { label: "Dashboard", to: "/manager/dashboard", icon: LayoutDashboard },
+  { label: "Apply Leave", to: "/manager/apply-leave", icon: FilePlus },
   { label: "Leave Types", to: "/manager/leave-types", icon: BookOpen },
   { label: "User Management", to: "/manager/users", icon: Users },
   { label: "All Requests", to: "/manager/requests", icon: ClipboardList },
-  { label: "Audit Trail", to: "/manager/audit", icon: Activity },
+  { label: "Reports", to: "/manager/reports", icon: FileText },
   { label: "System Calendar", to: "/manager/calendar", icon: CalendarDays },
-  { label: "Apply Leave", to: "/employee/apply-leave", icon: FilePlus },
 ];
 
 const hrNav: NavItem[] = [
   { label: "Dashboard", to: "/hr/dashboard", icon: LayoutDashboard },
+  { label: "Apply Leave", to: "/hr/apply-leave", icon: FilePlus },
   { label: "Leave Types", to: "/hr/policies", icon: BookOpen },
   { label: "User Management", to: "/hr/users", icon: Users },
   { label: "All Requests", to: "/hr/requests", icon: ClipboardList },
+  { label: "Reports", to: "/hr/reports", icon: FileText },
   { label: "Audit Trail", to: "/hr/audit", icon: Activity },
   { label: "System Calendar", to: "/hr/calendar", icon: CalendarDays },
 ];
 
-const navMap = { EMPLOYEE: employeeNav, MANAGER: managerNav, HR_ADMIN: hrNav };
+const navMap = { EMPLOYEE: employeeNav, INTERN: internNav, MANAGER: managerNav, HR_ADMIN: hrNav, HR: hrNav, ADMIN: hrNav };
 
 export const Sidebar = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const roleKey = String(currentUser?.role || "").toUpperCase();
 
   if (!currentUser) return null;
-  const navItems = navMap[currentUser.role] || [];
+  const navItems = navMap[roleKey] || [];
 
   const roleConfig = {
     EMPLOYEE: { label: "Employee", color: "bg-green-500" },
+    INTERN: { label: "Interns", color: "bg-cyan-500" },
     MANAGER: { label: "Manager", color: "bg-blue-500" },
     HR_ADMIN: { label: "HR Admin", color: "bg-purple-600" },
+    HR: { label: "HR", color: "bg-purple-600" },
+    ADMIN: { label: "Admin", color: "bg-purple-700" },
   };
-  const rc = roleConfig[currentUser.role];
+  const rc = roleConfig[roleKey] || roleConfig.EMPLOYEE;
 
   const handleLogout = () => {
     logout();

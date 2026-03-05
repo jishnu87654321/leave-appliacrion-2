@@ -4,26 +4,39 @@ const User = require("../models/User");
 const Notification = require("../models/Notification");
 const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
-const { calculateWorkingDays } = require("../utils/helpers");
-const { sendLeaveNotificationEmail } = require("../services/emailService");
+const { calculateWorkingDaysWithCalendar } = require("../services/calendarService");
+const { notifyLeaveEvent } = require("../services/notificationService");
 const { 
   addToPending, 
   deductLeaveBalance, 
   releasePending, 
-  restoreBalance 
+  restoreBalance,
+  getUserBalances,
+  convertCasualToEarned,
+  convertToEarned,
 } = require("../services/leaveBalanceService");
+const { applyManagerApproval } = require("../services/approvalWorkflowService");
+const path = require("path");
+const fs = require("fs");
+const LeaveCreditLog = require("../models/LeaveCreditLog");
+const { canonicalRole } = require("../utils/roles");
 
 /**
  * POST /api/leaves — Apply for leave
  */
 exports.applyLeave = async (req, res, next) => {
   try {
-    const { leaveTypeId, fromDate, toDate, halfDay, halfDaySession, reason, isEmergency } = req.body;
+    const { leaveTypeId, fromDate, toDate, halfDay, halfDaySession, reason, isEmergency, attachment } = req.body;
 
     const leaveType = await LeaveType.findById(leaveTypeId);
     if (!leaveType || !leaveType.isActive) return next(new AppError("Invalid or inactive leave type.", 400));
+    if (leaveType.code === "CL") {
+      return next(new AppError("Casual Leave is deprecated for new requests. Please use Earned Leave (EL).", 400));
+    }
 
     const user = await User.findById(req.user._id);
+    const applicantRole = canonicalRole(user.role);
+    const initialStatus = applicantRole === "INTERN" ? "HR_PENDING" : "PENDING";
 
     // Probation check
     if (user.probationStatus && !leaveType.applicableDuringProbation) {
@@ -31,20 +44,25 @@ exports.applyLeave = async (req, res, next) => {
     }
 
     // Calculate working days
-    const totalDays = halfDay ? 0.5 : calculateWorkingDays(new Date(fromDate), new Date(toDate));
+    const totalDays = halfDay
+      ? 0.5
+      : await calculateWorkingDaysWithCalendar(new Date(fromDate), new Date(toDate), {
+          excludeWeekends: leaveType.excludeWeekends !== false,
+          excludePublicHolidays: leaveType.excludePublicHolidays !== false,
+        });
     if (totalDays <= 0) return next(new AppError("No working days in the selected date range.", 400));
 
     // Check for overlapping leaves
     const overlap = await LeaveRequest.findOne({
       employee: req.user._id,
-      status: { $in: ["PENDING", "APPROVED"] },
+      status: { $in: ["PENDING", "HR_PENDING", "APPROVED"] },
       $or: [{ fromDate: { $lte: new Date(toDate) }, toDate: { $gte: new Date(fromDate) } }],
     });
     if (overlap) return next(new AppError("You have an existing leave request overlapping with these dates.", 409));
 
     // Check if 10 or more people are already on leave during the requested dates
     const overlappingLeaves = await LeaveRequest.countDocuments({
-      status: { $in: ["PENDING", "APPROVED"] },
+      status: { $in: ["PENDING", "HR_PENDING", "APPROVED"] },
       fromDate: { $lte: new Date(toDate) },
       toDate: { $gte: new Date(fromDate) },
     });
@@ -66,7 +84,22 @@ exports.applyLeave = async (req, res, next) => {
       return next(new AppError(`Maximum ${leaveType.maxConsecutiveDays} consecutive days allowed for ${leaveType.name}.`, 400));
     }
 
-    // Create request
+    let attachmentMeta = null;
+    if (attachment?.base64 && attachment?.fileName) {
+      const uploadDir = path.join(__dirname, "..", "uploads", "leave-attachments");
+      fs.mkdirSync(uploadDir, { recursive: true });
+      const safeName = `${Date.now()}-${attachment.fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+      const storagePath = path.join(uploadDir, safeName);
+      fs.writeFileSync(storagePath, Buffer.from(attachment.base64, "base64"));
+      attachmentMeta = {
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType || "application/octet-stream",
+        size: attachment.size || Buffer.byteLength(attachment.base64, "base64"),
+        storagePath,
+        uploadedAt: new Date(),
+      };
+    }
+
     const leaveRequest = await LeaveRequest.create({
       employee: req.user._id,
       leaveType: leaveTypeId,
@@ -76,28 +109,39 @@ exports.applyLeave = async (req, res, next) => {
       halfDay: halfDay || false,
       halfDaySession: halfDay ? halfDaySession : null,
       reason: reason.trim(),
+      status: initialStatus,
       appliedBalanceBefore: balance,
       isEmergency: isEmergency || false,
+      attachmentUrl: attachmentMeta ? `/api/leaves/${req.user._id}/attachments/${path.basename(attachmentMeta.storagePath)}` : null,
+      attachment: attachmentMeta,
     });
 
     // Mark balance as pending using service
     await addToPending(req.user._id, leaveTypeId, totalDays);
 
-    // Notify manager
-    if (user.managerId) {
-      await Notification.create({
-        user: user.managerId,
-        message: `${user.name} applied for ${leaveType.name} (${totalDays} day${totalDays !== 1 ? "s" : ""}) from ${fromDate}${!halfDay ? " to " + toDate : ""}. Action required.`,
-        type: "WARNING",
-        relatedLeaveRequest: leaveRequest._id,
-      });
-      const manager = await User.findById(user.managerId);
-      if (manager) await sendLeaveNotificationEmail(manager.email, "new_request", { employee: user.name, leaveType: leaveType.name, totalDays, fromDate, toDate: halfDay ? fromDate : toDate });
-    }
+    notifyLeaveEvent({
+      event: "APPLY",
+      leaveRequest: await leaveRequest.populate("leaveType"),
+      actor: req.user,
+      employee: user,
+      managerId: user.managerId || null,
+    }).catch((notifyErr) => {
+      console.error("Apply leave notification failed:", notifyErr.message);
+    });
 
     await AuditTrail.log({ action: "Leave Application Submitted", category: "LEAVE", performedBy: req.user._id, performedByName: user.name, performedByRole: user.role, target: `${leaveType.name} (${totalDays} days)`, targetId: leaveRequest._id, targetModel: "LeaveRequest", metadata: { leaveType: leaveType.name, days: totalDays.toString(), fromDate, toDate } });
 
-    res.status(201).json({ success: true, message: "Leave request submitted successfully.", data: { leaveRequest: await leaveRequest.populate(["employee", "leaveType"]) } });
+    res.status(201).json({
+      success: true,
+      message:
+        initialStatus === "HR_PENDING"
+          ? "Leave request submitted successfully. Waiting for HR approval."
+          : "Leave request submitted successfully.",
+      data: {
+        leaveRequest: await leaveRequest.populate(["employee", "leaveType"]),
+        notificationsQueued: true,
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -135,7 +179,7 @@ exports.getTeamLeaves = async (req, res, next) => {
     const teamIds = teamMembers.map(u => u._id);
     const query = { employee: { $in: teamIds } };
     if (status) query.status = status;
-    const leaves = await LeaveRequest.find(query).populate("employee", "name email department designation avatar probationStatus").populate("leaveType", "name code color requiresDocument").sort({ status: 1, createdAt: -1 });
+    const leaves = await LeaveRequest.find(query).populate("employee", "name email role department designation avatar probationStatus").populate("leaveType", "name code color requiresDocument").sort({ status: 1, createdAt: -1 });
     res.json({ success: true, count: leaves.length, data: { leaves } });
   } catch (err) { next(err); }
 };
@@ -156,7 +200,7 @@ exports.getAllLeaves = async (req, res, next) => {
     pipeline.push({ $sort: { createdAt: -1 } }, { $skip: (page - 1) * limit }, { $limit: parseInt(limit) });
 
     const [leaves, total] = await Promise.all([
-      LeaveRequest.find(query).populate("employee", "name email department designation avatar probationStatus leaveBalances").populate("leaveType", "name code color requiresDocument").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(parseInt(limit)),
+      LeaveRequest.find(query).populate("employee", "name email role department designation avatar probationStatus leaveBalances").populate("leaveType", "name code color requiresDocument").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(parseInt(limit)),
       LeaveRequest.countDocuments(query),
     ]);
     res.json({ success: true, count: leaves.length, total, pages: Math.ceil(total / limit), data: { leaves } });
@@ -171,11 +215,16 @@ exports.approveLeave = async (req, res, next) => {
   session.startTransaction();
   
   try {
-    const { comment, hrOverride } = req.body;
+    const { comment } = req.body;
+    const actorRole = canonicalRole(req.user.role);
     const leaveReq = await LeaveRequest.findById(req.params.id).populate("employee").populate("leaveType").session(session);
     if (!leaveReq) {
       await session.abortTransaction();
       return next(new AppError("Leave request not found.", 404));
+    }
+    if (actorRole === "MANAGER" && canonicalRole(leaveReq.employee.role) === "INTERN") {
+      await session.abortTransaction();
+      return next(new AppError("Intern leaves require HR approval.", 403));
     }
     if (leaveReq.status !== "PENDING") {
       await session.abortTransaction();
@@ -183,32 +232,22 @@ exports.approveLeave = async (req, res, next) => {
     }
 
     // Manager can only approve their team
-    if (req.user.role === "MANAGER" && leaveReq.employee.managerId?.toString() !== req.user._id.toString()) {
+    if (actorRole === "MANAGER" && leaveReq.employee.managerId?.toString() !== req.user._id.toString()) {
       await session.abortTransaction();
       return next(new AppError("You can only approve your team's requests.", 403));
     }
 
-    // Balance validation (HR can override)
+    // Manager approval flow
     const employee = await User.findById(leaveReq.employee._id).session(session);
     const balEntry = employee.leaveBalances.find(b => b.leaveTypeId.toString() === leaveReq.leaveType._id.toString());
     const availableBalance = balEntry ? balEntry.balance : 0;
     
-    if (!hrOverride && !leaveReq.leaveType.allowNegativeBalance && availableBalance < leaveReq.totalDays) {
+    if (!leaveReq.leaveType.allowNegativeBalance && availableBalance < leaveReq.totalDays) {
       await session.abortTransaction();
-      return next(new AppError(`Insufficient balance. Available: ${availableBalance} days, Required: ${leaveReq.totalDays} days. HR can override this check.`, 400));
+      return next(new AppError(`Insufficient balance. Available: ${availableBalance} days, Required: ${leaveReq.totalDays} days.`, 400));
     }
 
-    // Update leave request status
-    leaveReq.status = "APPROVED";
-    leaveReq.approvalHistory.push({
-      level: leaveReq.currentApprovalLevel,
-      approverId: req.user._id,
-      approverName: req.user.name,
-      approverRole: req.user.role,
-      status: "APPROVED",
-      comment: comment || "Approved",
-      actionDate: new Date(),
-    });
+    applyManagerApproval(leaveReq, req.user, comment);
     await leaveReq.save({ session });
 
     // Deduct balance using service (atomic operation within transaction)
@@ -218,17 +257,13 @@ exports.approveLeave = async (req, res, next) => {
     await session.commitTransaction();
 
     // Notify employee (after transaction)
-    await Notification.create({ 
-      user: leaveReq.employee._id, 
-      message: `Your ${leaveReq.leaveType.name} request for ${leaveReq.totalDays} day(s) has been approved by ${req.user.name}.`, 
-      type: "SUCCESS", 
-      relatedLeaveRequest: leaveReq._id 
-    });
-    
-    await sendLeaveNotificationEmail(leaveReq.employee.email, "approved", { 
-      approverName: req.user.name, 
-      leaveType: leaveReq.leaveType.name, 
-      totalDays: leaveReq.totalDays 
+    await notifyLeaveEvent({
+      event: "APPROVED",
+      leaveRequest: leaveReq,
+      actor: req.user,
+      employee: leaveReq.employee,
+      hrOnly: actorRole === "HR_ADMIN",
+      comment: comment || "",
     });
 
     await AuditTrail.log({ 
@@ -243,7 +278,7 @@ exports.approveLeave = async (req, res, next) => {
       metadata: { 
         days: leaveReq.totalDays.toString(), 
         comment: comment || "",
-        hrOverride: hrOverride ? "true" : "false"
+        hrOverride: "false"
       }, 
       severity: "LOW" 
     });
@@ -281,6 +316,7 @@ exports.rejectLeave = async (req, res, next) => {
   
   try {
     const { comment } = req.body;
+    const actorRole = canonicalRole(req.user.role);
     if (!comment?.trim()) {
       await session.abortTransaction();
       return next(new AppError("Rejection reason (comment) is required.", 400));
@@ -291,13 +327,17 @@ exports.rejectLeave = async (req, res, next) => {
       await session.abortTransaction();
       return next(new AppError("Leave request not found.", 404));
     }
+    if (actorRole === "MANAGER" && canonicalRole(leaveReq.employee.role) === "INTERN") {
+      await session.abortTransaction();
+      return next(new AppError("Intern leaves require HR approval.", 403));
+    }
     if (leaveReq.status !== "PENDING") {
       await session.abortTransaction();
       return next(new AppError("Only pending requests can be rejected.", 400));
     }
 
     // Manager can only reject their team
-    if (req.user.role === "MANAGER" && leaveReq.employee.managerId?.toString() !== req.user._id.toString()) {
+    if (actorRole === "MANAGER" && leaveReq.employee.managerId?.toString() !== req.user._id.toString()) {
       await session.abortTransaction();
       return next(new AppError("You can only reject your team's requests.", 403));
     }
@@ -321,18 +361,13 @@ exports.rejectLeave = async (req, res, next) => {
     // Commit transaction
     await session.commitTransaction();
 
-    // Notify employee (after transaction)
-    await Notification.create({ 
-      user: leaveReq.employee._id, 
-      message: `Your ${leaveReq.leaveType.name} request was rejected by ${req.user.name}. Reason: ${comment}`, 
-      type: "DANGER", 
-      relatedLeaveRequest: leaveReq._id 
-    });
-    
-    await sendLeaveNotificationEmail(leaveReq.employee.email, "rejected", { 
-      approverName: req.user.name, 
-      leaveType: leaveReq.leaveType.name, 
-      reason: comment 
+    await notifyLeaveEvent({
+      event: "REJECTED",
+      leaveRequest: leaveReq,
+      actor: req.user,
+      employee: leaveReq.employee,
+      hrOnly: actorRole === "HR_ADMIN",
+      comment,
     });
 
     await AuditTrail.log({ 
@@ -388,7 +423,7 @@ exports.cancelLeave = async (req, res, next) => {
     
     const previousStatus = leaveReq.status;
     
-    if (!["PENDING", "APPROVED"].includes(previousStatus)) {
+    if (!["PENDING", "HR_PENDING", "APPROVED"].includes(previousStatus)) {
       await session.abortTransaction();
       return next(new AppError("Only pending or approved requests can be cancelled.", 400));
     }
@@ -399,7 +434,7 @@ exports.cancelLeave = async (req, res, next) => {
     await leaveReq.save({ session });
 
     // Handle balance restoration based on previous status
-    if (previousStatus === "PENDING") {
+    if (previousStatus === "PENDING" || previousStatus === "HR_PENDING") {
       // Release pending balance
       await releasePending(req.user._id, leaveReq.leaveType._id, leaveReq.totalDays, session);
     } else if (previousStatus === "APPROVED") {
@@ -409,6 +444,14 @@ exports.cancelLeave = async (req, res, next) => {
 
     // Commit transaction
     await session.commitTransaction();
+
+    await notifyLeaveEvent({
+      event: "CANCELLED",
+      leaveRequest: await leaveReq.populate("employee leaveType"),
+      actor: req.user,
+      employee: req.user,
+      comment: req.body.reason || "",
+    });
 
     await AuditTrail.log({
       action: "Leave Request Cancelled",
@@ -468,7 +511,7 @@ exports.forceCancelLeave = async (req, res, next) => {
     
     const previousStatus = leaveReq.status;
     
-    if (!["PENDING", "APPROVED"].includes(previousStatus)) {
+    if (!["PENDING", "HR_PENDING", "APPROVED"].includes(previousStatus)) {
       await session.abortTransaction();
       return next(new AppError("Only pending or approved requests can be cancelled.", 400));
     }
@@ -488,7 +531,7 @@ exports.forceCancelLeave = async (req, res, next) => {
     await leaveReq.save({ session });
 
     // Handle balance restoration based on previous status
-    if (previousStatus === "PENDING") {
+    if (previousStatus === "PENDING" || previousStatus === "HR_PENDING") {
       await releasePending(leaveReq.employee._id, leaveReq.leaveType._id, leaveReq.totalDays, session);
     } else if (previousStatus === "APPROVED") {
       await restoreBalance(leaveReq.employee._id, leaveReq.leaveType._id, leaveReq.totalDays, session);
@@ -497,12 +540,13 @@ exports.forceCancelLeave = async (req, res, next) => {
     // Commit transaction
     await session.commitTransaction();
 
-    // Notify employee
-    await Notification.create({
-      user: leaveReq.employee._id,
-      message: `Your ${leaveReq.leaveType.name} request has been cancelled by HR. Reason: ${reason}`,
-      type: "WARNING",
-      relatedLeaveRequest: leaveReq._id,
+    await notifyLeaveEvent({
+      event: "CANCELLED",
+      leaveRequest: leaveReq,
+      actor: req.user,
+      employee: leaveReq.employee,
+      hrOnly: true,
+      comment: reason,
     });
 
     await AuditTrail.log({
@@ -540,10 +584,11 @@ exports.getTeamCalendar = async (req, res, next) => {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
 
+    const role = canonicalRole(req.user.role);
     let employeeIds;
-    if (req.user.role === "HR_ADMIN") {
+    if (role === "HR_ADMIN") {
       employeeIds = (await User.find({ isActive: true })).map(u => u._id);
-    } else if (req.user.role === "MANAGER") {
+    } else if (role === "MANAGER") {
       const team = await User.find({ managerId: req.user._id });
       employeeIds = [req.user._id, ...team.map(u => u._id)];
     } else {
@@ -568,7 +613,8 @@ exports.getLeaveById = async (req, res, next) => {
     if (!leave) return next(new AppError("Leave request not found.", 404));
     
     // Check access rights
-    if (req.user.role === "EMPLOYEE" && leave.employee._id.toString() !== req.user._id.toString()) {
+    const role = canonicalRole(req.user.role);
+    if ((role === "EMPLOYEE" || role === "INTERN") && leave.employee._id.toString() !== req.user._id.toString()) {
       return next(new AppError("You can only view your own leave requests.", 403));
     }
     
@@ -577,22 +623,51 @@ exports.getLeaveById = async (req, res, next) => {
 };
 
 /**
+ * GET /api/leaves/:userId/attachments/:fileName — download attachment
+ */
+exports.downloadAttachment = async (req, res, next) => {
+  try {
+    const { userId, fileName } = req.params;
+    const leave = await LeaveRequest.findOne({
+      employee: userId,
+      "attachment.storagePath": { $regex: `${fileName}$` },
+    }).populate("employee", "_id managerId");
+
+    if (!leave || !leave.attachment?.storagePath) {
+      return next(new AppError("Attachment not found.", 404));
+    }
+
+    const role = canonicalRole(req.user.role);
+    const isOwner = req.user._id.toString() === leave.employee._id.toString();
+    const isManager = role === "MANAGER" && leave.employee.managerId?.toString() === req.user._id.toString();
+    const isHR = role === "HR_ADMIN";
+    if (!isOwner && !isManager && !isHR) {
+      return next(new AppError("Access denied for attachment.", 403));
+    }
+
+    return res.download(leave.attachment.storagePath, leave.attachment.fileName);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
  * GET /api/leaves/stats/dashboard — Get dashboard statistics
  */
 exports.getDashboardStats = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const userRole = req.user.role;
+    const userRole = canonicalRole(req.user.role);
 
     let stats = {};
 
-    if (userRole === "EMPLOYEE") {
+    if (userRole === "EMPLOYEE" || userRole === "INTERN") {
       // Employee stats
       const myLeaves = await LeaveRequest.find({ employee: userId });
       const user = await User.findById(userId).select("leaveBalances probationStatus");
       
       stats = {
-        pending: myLeaves.filter(l => l.status === "PENDING").length,
+        pending: myLeaves.filter(l => l.status === "PENDING" || l.status === "HR_PENDING").length,
         approved: myLeaves.filter(l => l.status === "APPROVED").length,
         rejected: myLeaves.filter(l => l.status === "REJECTED").length,
         totalRequests: myLeaves.length,
@@ -628,7 +703,7 @@ exports.getDashboardStats = async (req, res, next) => {
       
       stats = {
         totalEmployees: allUsers.length,
-        pending: allLeaves.filter(l => l.status === "PENDING").length,
+        pending: allLeaves.filter(l => l.status === "PENDING" || l.status === "HR_PENDING").length,
         approved: allLeaves.filter(l => l.status === "APPROVED").length,
         rejected: allLeaves.filter(l => l.status === "REJECTED").length,
         totalRequests: allLeaves.length,
@@ -639,4 +714,84 @@ exports.getDashboardStats = async (req, res, next) => {
 
     res.json({ success: true, data: { stats } });
   } catch (err) { next(err); }
+};
+
+/**
+ * GET /api/leaves/balance - current user's leave balance
+ */
+exports.getMyBalance = async (req, res, next) => {
+  try {
+    const balances = await getUserBalances(req.user._id);
+    const summary = balances.reduce(
+      (acc, bal) => {
+        const code = bal.leaveType?.code;
+        if (code === "EL") acc.earned_leave = bal.balance;
+        if (code === "SL") acc.sick_leave = bal.balance;
+        if (code === "CL") acc.casual_leave = bal.balance;
+        return acc;
+      },
+      { earned_leave: 0, sick_leave: 0, casual_leave: 0 }
+    );
+    const lastCredit = await LeaveCreditLog.findOne({ userId: req.user._id }).sort({ month: -1, createdAt: -1 });
+    const now = new Date();
+    const nextCreditDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    res.json({
+      success: true,
+      data: {
+        balances,
+        ...summary,
+        earnedLeave: summary.earned_leave,
+        sickLeave: summary.sick_leave,
+        casualLeave: summary.casual_leave,
+        creditInfo: {
+          lastCreditedMonth: lastCredit?.month || null,
+          nextCreditDate: nextCreditDate.toISOString(),
+          creditDay: 1,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/leaves/convert-casual-to-earned
+ */
+exports.convertCasualBalance = async (req, res, next) => {
+  try {
+    const { days } = req.body;
+    const result = await convertCasualToEarned(req.user._id, days);
+    const balances = await getUserBalances(req.user._id);
+    res.json({
+      success: true,
+      message: `Converted ${result.convertedDays} days from Casual Leave to Earned Leave.`,
+      data: { balances, convertedDays: result.convertedDays },
+    });
+  } catch (err) {
+    next(new AppError(err.message || "Conversion failed", 400));
+  }
+};
+
+/**
+ * POST /api/leaves/convert-to-earned
+ */
+exports.convertToEarnedBalance = async (req, res, next) => {
+  try {
+    const { days, sourceCode } = req.body;
+    const result = await convertToEarned(req.user._id, sourceCode, days);
+    const balances = await getUserBalances(req.user._id);
+    res.json({
+      success: true,
+      message: `Converted ${result.convertedDays} days from ${result.sourceCode} to Earned Leave (EL).`,
+      data: {
+        balances,
+        convertedDays: result.convertedDays,
+        sourceCode: result.sourceCode,
+        limit: result.limit,
+      },
+    });
+  } catch (err) {
+    next(new AppError(err.message || "Conversion failed", 400));
+  }
 };

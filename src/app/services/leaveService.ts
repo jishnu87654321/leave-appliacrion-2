@@ -8,6 +8,12 @@ export interface LeaveApplication {
   halfDaySession?: 'MORNING' | 'AFTERNOON';
   reason: string;
   isEmergency?: boolean;
+  attachment?: {
+    fileName: string;
+    mimeType: string;
+    size: number;
+    base64: string;
+  };
 }
 
 export const leaveService = {
@@ -76,6 +82,12 @@ export const leaveService = {
   // Get dashboard stats
   getDashboardStats: async () => {
     const response = await api.get('/leaves/stats/dashboard');
+    return response.data;
+  },
+
+  // Convert CL/SL to EL
+  convertToEarned: async (sourceCode: 'CL' | 'SL', days: number) => {
+    const response = await api.post('/leaves/convert-to-earned', { sourceCode, days });
     return response.data;
   },
 };

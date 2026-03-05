@@ -62,7 +62,6 @@ const managerSchema = new mongoose.Schema({
 });
 
 // Indexes
-managerSchema.index({ userId: 1 }, { unique: true });
 managerSchema.index({ department: 1 });
 managerSchema.index({ isActive: 1 });
 

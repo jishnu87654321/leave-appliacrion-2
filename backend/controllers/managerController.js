@@ -2,6 +2,7 @@ const Manager = require("../models/Manager");
 const User = require("../models/User");
 const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
+const { canonicalRole } = require("../utils/roles");
 
 /**
  * POST /api/managers — Create manager profile
@@ -22,7 +23,7 @@ exports.createManagerProfile = async (req, res, next) => {
       return next(new AppError("User not found.", 404));
     }
     
-    if (user.role !== "MANAGER" && user.role !== "HR_ADMIN") {
+    if (canonicalRole(user.role) !== "MANAGER" && canonicalRole(user.role) !== "HR_ADMIN") {
       return next(new AppError("User must have MANAGER or HR_ADMIN role.", 400));
     }
 

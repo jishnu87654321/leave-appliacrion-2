@@ -1,11 +1,23 @@
 const mongoose = require("mongoose");
+const { canonicalRole } = require("../utils/roles");
+
+const normalizeAuditRole = (value) => {
+  const upper = String(value || "").toUpperCase();
+  if (upper === "SYSTEM") return "SYSTEM";
+  return canonicalRole(value);
+};
 
 const auditTrailSchema = new mongoose.Schema({
   action: { type: String, required: true, trim: true },
   category: { type: String, enum: ["LEAVE", "USER", "POLICY", "AUTH", "REPORT", "SYSTEM"], required: true },
   performedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   performedByName: { type: String, required: true },
-  performedByRole: { type: String, enum: ["EMPLOYEE", "MANAGER", "HR_ADMIN", "SYSTEM"], required: true },
+  performedByRole: {
+    type: String,
+    enum: ["EMPLOYEE", "INTERN", "MANAGER", "HR_ADMIN", "SYSTEM"],
+    required: true,
+    set: normalizeAuditRole,
+  },
   target: { type: String, required: true },
   targetId: { type: mongoose.Schema.Types.ObjectId, default: null },
   targetModel: { type: String, enum: ["User", "LeaveRequest", "LeaveType", null], default: null },
@@ -23,7 +35,8 @@ auditTrailSchema.index({ timestamp: -1 });
 
 // Static: log action
 auditTrailSchema.statics.log = function (data) {
-  return this.create({ ...data, timestamp: new Date() });
+  const normalizedRole = normalizeAuditRole(data?.performedByRole);
+  return this.create({ ...data, performedByRole: normalizedRole, timestamp: new Date() });
 };
 
 // Static: get audit for a specific resource

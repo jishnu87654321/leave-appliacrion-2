@@ -7,8 +7,8 @@ import { useLeave } from "../../context/LeaveContext";
 import { calculateWorkingDays, getTodayStr, formatDate } from "../../utils/dateUtils";
 
 export default function ApplyLeave() {
-  const { currentUser, leaveBalances } = useAuth();
-  const { leaveTypes, submitLeaveRequest } = useLeave();
+  const { currentUser, leaveBalances, fetchLeaveBalances } = useAuth();
+  const { leaveTypes, submitLeaveRequest, fetchLeaveTypes, fetchLeaveRequests } = useLeave();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
@@ -21,8 +21,10 @@ export default function ApplyLeave() {
   });
   const [totalDays, setTotalDays] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [attachment, setAttachment] = useState<{ fileName: string; mimeType: string; size: number; base64: string } | null>(null);
 
   const today = getTodayStr();
 
@@ -34,6 +36,13 @@ export default function ApplyLeave() {
       setTotalDays(0);
     }
   }, [form.fromDate, form.toDate, form.halfDay]);
+
+  // Always sync the latest policy + balances when opening Apply Leave.
+  useEffect(() => {
+    fetchLeaveBalances();
+    fetchLeaveTypes();
+    fetchLeaveRequests();
+  }, [fetchLeaveBalances, fetchLeaveTypes, fetchLeaveRequests]);
 
   if (!currentUser) return null;
 
@@ -47,7 +56,7 @@ export default function ApplyLeave() {
   const isProbationRestricted = currentUser.probationStatus && selectedType && !selectedType.applicableDuringProbation;
 
   const availableTypes = leaveTypes.filter(
-    (lt) => !(currentUser.probationStatus && !lt.applicableDuringProbation)
+    (lt) => lt.code !== "CL" && !(currentUser.probationStatus && !lt.applicableDuringProbation)
   );
 
   const handleChange = (field: string, value: string | boolean) =>
@@ -81,9 +90,11 @@ export default function ApplyLeave() {
         halfDay: form.halfDay,
         halfDaySession: form.halfDay ? form.halfDaySession : undefined,
         reason: form.reason.trim(),
+        attachment: attachment || undefined,
       });
 
       if (result.success) {
+        setSubmitMessage(result.message || "");
         setSubmitted(true);
         setTimeout(() => navigate("/employee/leave-history"), 2000);
       } else {
@@ -98,19 +109,19 @@ export default function ApplyLeave() {
   };
 
   if (submitted) return (
-    <DashboardLayout title="Apply for Leave" allowedRoles={["EMPLOYEE", "MANAGER", "HR_ADMIN"]}>
+    <DashboardLayout title="Apply for Leave" allowedRoles={["EMPLOYEE", "INTERN", "MANAGER", "HR_ADMIN"]}>
       <div className="max-w-md mx-auto mt-16 text-center">
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <CheckCircle className="w-10 h-10 text-green-500" />
         </div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Request Submitted!</h2>
-        <p className="text-gray-500 text-sm">Your leave request has been submitted and is awaiting approval. Redirecting...</p>
+        <p className="text-gray-500 text-sm">{submitMessage || "Your leave request has been submitted and is awaiting approval. Redirecting..."}</p>
       </div>
     </DashboardLayout>
   );
 
   return (
-    <DashboardLayout title="Apply for Leave" subtitle="Submit a new leave request" allowedRoles={["EMPLOYEE", "MANAGER", "HR_ADMIN"]}>
+    <DashboardLayout title="Apply for Leave" subtitle="Submit a new leave request" allowedRoles={["EMPLOYEE", "INTERN", "MANAGER", "HR_ADMIN"]}>
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="h-1.5 w-full bg-gradient-to-r from-[#1E3A8A] via-[#3B82F6] to-[#0EA5E9]" />
@@ -199,6 +210,35 @@ export default function ApplyLeave() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Supporting Document (optional)</label>
+                <input
+                  type="file"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) {
+                      setAttachment(null);
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const base64 = String(reader.result || "").split(",")[1] || "";
+                      setAttachment({
+                        fileName: file.name,
+                        mimeType: file.type || "application/octet-stream",
+                        size: file.size,
+                        base64,
+                      });
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                />
+                {attachment && (
+                  <p className="text-xs text-gray-500 mt-1">Attached: {attachment.fileName}</p>
+                )}
+              </div>
+
               {/* Submit */}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => navigate(-1)}
@@ -219,3 +259,4 @@ export default function ApplyLeave() {
     </DashboardLayout>
   );
 }
+

@@ -30,4 +30,5 @@ console.log(`🔌 Database: Connected`);
 console.log(`🔐 Security: Enabled\n`);
 
 // Start the server
-require('./server');
+const app = require("./server");
+app.startServer();

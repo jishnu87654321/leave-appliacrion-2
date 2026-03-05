@@ -1,8 +1,11 @@
 const User = require("../models/User");
 const AuditTrail = require("../models/AuditTrail");
 const Notification = require("../models/Notification");
+const DepartmentChangeRequest = require("../models/DepartmentChangeRequest");
+const LeaveCreditLog = require("../models/LeaveCreditLog");
 const { AppError } = require("../middleware/errorHandler");
 const { initializeUserBalances, getUserBalances } = require("../services/leaveBalanceService");
+const { canonicalRole, normalizeRoleForDb } = require("../utils/roles");
 
 /**
  * POST /api/users — Create new user (HR only)
@@ -22,12 +25,14 @@ exports.createUser = async (req, res, next) => {
       return next(new AppError("Email already registered.", 409));
     }
 
+    const normalizedRole = normalizeRoleForDb(role || "employee");
+
     // Create user
     const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
-      role: role || "EMPLOYEE",
+      role: normalizedRole,
       department: department.trim(),
       designation: designation?.trim() || "",
       phone: phone?.trim() || "",
@@ -41,17 +46,17 @@ exports.createUser = async (req, res, next) => {
     await initializeUserBalances(user._id);
 
     // Create manager profile if role is MANAGER or HR_ADMIN
-    if (user.role === "MANAGER" || user.role === "HR_ADMIN") {
+    if (canonicalRole(user.role) === "MANAGER" || canonicalRole(user.role) === "HR_ADMIN") {
       const Manager = require("../models/Manager");
       const managerProfile = await Manager.create({
         userId: user._id,
         department: user.department,
-        managementLevel: user.role === "HR_ADMIN" ? "DIRECTOR" : "MANAGER",
+        managementLevel: canonicalRole(user.role) === "HR_ADMIN" ? "DIRECTOR" : "MANAGER",
         responsibilities: [],
         approvalAuthority: {
-          maxLeaveDays: user.role === "HR_ADMIN" ? 365 : 30,
-          canApproveSpecialLeave: user.role === "HR_ADMIN",
-          canOverrideRules: user.role === "HR_ADMIN"
+          maxLeaveDays: canonicalRole(user.role) === "HR_ADMIN" ? 365 : 30,
+          canApproveSpecialLeave: canonicalRole(user.role) === "HR_ADMIN",
+          canOverrideRules: canonicalRole(user.role) === "HR_ADMIN"
         }
       });
       await managerProfile.updateTeamSize();
@@ -93,7 +98,7 @@ exports.getAllUsers = async (req, res, next) => {
   try {
     const { role, department, isActive, page = 1, limit = 50, search } = req.query;
     const query = {};
-    if (role) query.role = role;
+    if (role) query.role = normalizeRoleForDb(role);
     if (department) query.department = department;
     if (isActive !== undefined) query.isActive = isActive === "true";
     if (search) query.$or = [{ name: new RegExp(search, "i") }, { email: new RegExp(search, "i") }];
@@ -138,8 +143,20 @@ exports.updateUser = async (req, res, next) => {
 
     if (name) user.name = name.trim();
     if (email) user.email = email.toLowerCase().trim();
-    if (role) user.role = role;
-    if (department) user.department = department.trim();
+    if (role) user.role = normalizeRoleForDb(role);
+
+    // Department updates must be confirmed first via request workflow
+    if (department && department.trim() !== user.department) {
+      await DepartmentChangeRequest.create({
+        userId: user._id,
+        requestedBy: req.user._id,
+        oldDepartment: user.department,
+        newDepartment: department.trim(),
+        reason: req.body.departmentChangeReason?.trim() || "",
+        status: "PENDING",
+        departmentConfirmed: false,
+      });
+    }
     if (designation) user.designation = designation.trim();
     if (phone) user.phone = phone.trim();
     if (probationStatus !== undefined) user.probationStatus = probationStatus;
@@ -151,24 +168,27 @@ exports.updateUser = async (req, res, next) => {
     if (role && oldRole !== role) {
       const Manager = require("../models/Manager");
       
-      if ((role === "MANAGER" || role === "HR_ADMIN") && oldRole === "EMPLOYEE") {
+      if (
+        (canonicalRole(role) === "MANAGER" || canonicalRole(role) === "HR_ADMIN") &&
+        canonicalRole(oldRole) === "EMPLOYEE"
+      ) {
         // Create manager profile if promoted to manager
         const existingProfile = await Manager.findOne({ userId: user._id });
         if (!existingProfile) {
           const managerProfile = await Manager.create({
             userId: user._id,
             department: user.department,
-            managementLevel: role === "HR_ADMIN" ? "DIRECTOR" : "MANAGER",
+            managementLevel: canonicalRole(role) === "HR_ADMIN" ? "DIRECTOR" : "MANAGER",
             responsibilities: [],
             approvalAuthority: {
-              maxLeaveDays: role === "HR_ADMIN" ? 365 : 30,
-              canApproveSpecialLeave: role === "HR_ADMIN",
-              canOverrideRules: role === "HR_ADMIN"
+              maxLeaveDays: canonicalRole(role) === "HR_ADMIN" ? 365 : 30,
+              canApproveSpecialLeave: canonicalRole(role) === "HR_ADMIN",
+              canOverrideRules: canonicalRole(role) === "HR_ADMIN"
             }
           });
           await managerProfile.updateTeamSize();
         }
-      } else if (role === "EMPLOYEE" && (oldRole === "MANAGER" || oldRole === "HR_ADMIN")) {
+      } else if (canonicalRole(role) === "EMPLOYEE" && (canonicalRole(oldRole) === "MANAGER" || canonicalRole(oldRole) === "HR_ADMIN")) {
         // Deactivate manager profile if demoted to employee
         await Manager.findOneAndUpdate(
           { userId: user._id },
@@ -236,7 +256,7 @@ exports.activateUser = async (req, res, next) => {
     await initializeUserBalances(user._id);
 
     // Activate manager profile if user is a manager
-    if (user.role === "MANAGER" || user.role === "HR_ADMIN") {
+    if (canonicalRole(user.role) === "MANAGER" || canonicalRole(user.role) === "HR_ADMIN") {
       const Manager = require("../models/Manager");
       const managerProfile = await Manager.findOne({ userId: user._id });
       if (managerProfile) {
@@ -309,7 +329,7 @@ exports.assignManager = async (req, res, next) => {
 
     if (managerId) {
       const manager = await User.findById(managerId);
-      if (!manager || manager.role === "EMPLOYEE") {
+      if (!manager || canonicalRole(manager.role) === "EMPLOYEE") {
         return next(new AppError("Invalid manager. Must be MANAGER or HR_ADMIN.", 400));
       }
       user.managerId = managerId;
@@ -407,7 +427,34 @@ exports.updateLeaveBalance = async (req, res, next) => {
 exports.getUserLeaveBalances = async (req, res, next) => {
   try {
     const balances = await getUserBalances(req.params.id);
-    res.json({ success: true, data: { balances } });
+    const summary = balances.reduce(
+      (acc, bal) => {
+        const code = bal.leaveType?.code;
+        if (code === "EL") acc.earned_leave = bal.balance;
+        if (code === "SL") acc.sick_leave = bal.balance;
+        if (code === "CL") acc.casual_leave = bal.balance;
+        return acc;
+      },
+      { earned_leave: 0, sick_leave: 0, casual_leave: 0 }
+    );
+    const lastCredit = await LeaveCreditLog.findOne({ userId: req.params.id }).sort({ month: -1, createdAt: -1 });
+    const now = new Date();
+    const nextCreditDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    res.json({
+      success: true,
+      data: {
+        balances,
+        ...summary,
+        earnedLeave: summary.earned_leave,
+        sickLeave: summary.sick_leave,
+        casualLeave: summary.casual_leave,
+        creditInfo: {
+          lastCreditedMonth: lastCredit?.month || null,
+          nextCreditDate: nextCreditDate.toISOString(),
+          creditDay: 1,
+        },
+      },
+    });
   } catch (err) {
     next(err);
   }
