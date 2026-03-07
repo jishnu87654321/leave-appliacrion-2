@@ -2,6 +2,10 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { AppError } = require("./errorHandler");
 const { canonicalRole } = require("../utils/roles");
+const { getRequiredJwtSecret, JWT_ALGORITHM } = require("../config/security");
+const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
+
+const JWT_SECRET = getRequiredJwtSecret();
 
 exports.protect = async (req, res, next) => {
   try {
@@ -21,9 +25,17 @@ exports.protect = async (req, res, next) => {
     // Verify token
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET || "your_super_secret_jwt_key_here_change_in_production");
+      decoded = jwt.verify(token, JWT_SECRET, {
+        algorithms: [JWT_ALGORITHM],
+        issuer: process.env.JWT_ISSUER || "leave-ms-api",
+        audience: process.env.JWT_AUDIENCE || "leave-ms-web",
+      });
     } catch (err) {
-      if (err.name === "TokenExpiredError") return next(new AppError("Session expired. Please login again.", 401));
+      if (err.name === "TokenExpiredError") {
+        logSecurityEvent(SECURITY_EVENTS.AUTH_TOKEN_EXPIRED, { ip: req.ip });
+        return next(new AppError("Session expired. Please login again.", 401));
+      }
+      logSecurityEvent(SECURITY_EVENTS.AUTH_TOKEN_INVALID, { ip: req.ip });
       return next(new AppError("Invalid token. Please login again.", 401));
     }
 
@@ -55,8 +67,13 @@ exports.generateToken = (userId, expiresIn = "7d") => {
   const payload = typeof userId === "object" && userId !== null ? userId : { id: userId };
   return jwt.sign(
     payload,
-    process.env.JWT_SECRET || "your_super_secret_jwt_key_here_change_in_production",
-    { expiresIn }
+    JWT_SECRET,
+    {
+      expiresIn,
+      algorithm: JWT_ALGORITHM,
+      issuer: process.env.JWT_ISSUER || "leave-ms-api",
+      audience: process.env.JWT_AUDIENCE || "leave-ms-web",
+    }
   );
 };
 
@@ -67,7 +84,11 @@ exports.optionalAuth = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_super_secret_jwt_key_here_change_in_production");
+      const decoded = jwt.verify(token, JWT_SECRET, {
+        algorithms: [JWT_ALGORITHM],
+        issuer: process.env.JWT_ISSUER || "leave-ms-api",
+        audience: process.env.JWT_AUDIENCE || "leave-ms-web",
+      });
       req.user = await User.findById(decoded.id || decoded.userId);
     }
     next();

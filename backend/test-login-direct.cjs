@@ -6,7 +6,7 @@ async function testLogin() {
 
   try {
     const response = await axios.post("http://localhost:5000/api/auth/login", {
-      email: "hradmin@gmail.com",
+      email: "Subramanya@aksharaenterprises.info",
       password: "admin123",
     });
 

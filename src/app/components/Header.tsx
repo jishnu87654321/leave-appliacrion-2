@@ -30,10 +30,10 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
   };
 
   return (
-    <header className="bg-white border-b border-gray-100 px-6 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-sm transition-all duration-300">
+    <header className="bg-white border-b border-gray-100 px-3 sm:px-4 lg:px-6 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-sm transition-all duration-300">
       <div>
-        <h1 className="font-bold text-gray-900 text-lg leading-tight">{title}</h1>
-        {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+        <h1 className="font-bold text-gray-900 text-base sm:text-lg leading-tight">{title}</h1>
+        {subtitle && <p className="hidden sm:block text-xs text-gray-500 mt-0.5">{subtitle}</p>}
       </div>
 
       <div className="flex items-center gap-3">

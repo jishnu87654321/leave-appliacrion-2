@@ -24,9 +24,9 @@ const employeeNav: NavItem[] = [
 const internNav: NavItem[] = [
   { label: "Dashboard", to: "/intern/dashboard", icon: LayoutDashboard },
   { label: "Apply Leave", to: "/intern/apply-leave", icon: FilePlus },
-  { label: "Leave Balance", to: "/employee/leave-balance", icon: Wallet },
-  { label: "My Requests", to: "/employee/leave-history", icon: ClipboardList },
-  { label: "Team Calendar", to: "/employee/team-calendar", icon: Calendar },
+  { label: "Leave Balance", to: "/intern/leave-balance", icon: Wallet },
+  { label: "My Requests", to: "/intern/leave-history", icon: ClipboardList },
+  { label: "Team Calendar", to: "/intern/team-calendar", icon: Calendar },
 ];
 
 const managerNav: NavItem[] = [
@@ -63,7 +63,7 @@ export const Sidebar = () => {
 
   const roleConfig = {
     EMPLOYEE: { label: "Employee", color: "bg-green-500" },
-    INTERN: { label: "Interns", color: "bg-cyan-500" },
+    INTERN: { label: "Intern", color: "bg-cyan-500" },
     MANAGER: { label: "Manager", color: "bg-blue-500" },
     HR_ADMIN: { label: "HR Admin", color: "bg-purple-600" },
     HR: { label: "HR", color: "bg-purple-600" },

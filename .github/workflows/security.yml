@@ -1,0 +1,28 @@
+name: security-checks
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install frontend deps
+        run: npm ci
+      - name: Frontend npm audit
+        run: npm run security:audit
+      - name: Install backend deps
+        run: npm --prefix backend ci
+      - name: Backend npm audit
+        run: npm --prefix backend run security:audit
+      - name: Backend tests (includes security tests)
+        run: npm --prefix backend test
+

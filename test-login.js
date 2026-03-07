@@ -8,7 +8,7 @@ const testLogin = async () => {
   console.log('🧪 Testing Login API...\n');
   
   const credentials = [
-    { email: 'hradmin@gmail.com', password: 'password123', role: 'HR Admin' },
+    { email: 'Subramanya@aksharaenterprises.info', password: 'password123', role: 'HR Admin' },
     { email: 'johnmanager@gmail.com', password: 'password123', role: 'Manager 1' },
     { email: 'sarahmanager@gmail.com', password: 'password123', role: 'Manager 2' },
   ];

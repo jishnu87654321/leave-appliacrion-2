@@ -18,6 +18,41 @@ async function syncLeaveBalanceDoc(userId, leaveTypeId, balanceObj) {
   );
 }
 
+function isJoinedAfter15th(user) {
+  const joinDate = user.joinDate || user.joining_date;
+  if (!joinDate) return false;
+  const date = new Date(joinDate);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getDate() > 15;
+}
+
+function calculateInitialBalance(user, leaveType) {
+  const code = String(leaveType?.code || "").toUpperCase();
+  const isIntern = String(user?.role || "").toUpperCase() === "INTERN" || String(user?.role || "").toLowerCase() === "intern";
+
+  if (leaveType.accrualType === "NONE") return 0;
+
+  if (isIntern) {
+    if (code === "EL") return Number(POLICY.INTERN.earnedAccrualPerMonth || 0);
+    if (code === "SL") return Number(POLICY.INTERN.sickAccrualPerMonth || 0);
+  }
+
+  if (isJoinedAfter15th(user)) {
+    if (code === "EL") return Number(POLICY.JOINING_MONTH_AFTER_15TH.earnedAccrual || 0);
+    if (code === "SL") return Number(POLICY.JOINING_MONTH_AFTER_15TH.sickAccrual || 0);
+  }
+
+  if (leaveType.accrualType === "MONTHLY") {
+    return Number(leaveType.accrualPerMonth ?? leaveType.accrualRate ?? 0);
+  }
+
+  if (leaveType.accrualType === "YEARLY") {
+    return Number(leaveType.yearlyTotal ?? leaveType.accrualRate ?? 0);
+  }
+
+  return 0;
+}
+
 async function initializeUserBalances(userId) {
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");
@@ -34,9 +69,11 @@ async function initializeUserBalances(userId) {
       continue;
     }
 
+    const initialBalance = calculateInitialBalance(user, leaveType);
+
     user.leaveBalances.push({
       leaveTypeId: leaveType._id,
-      balance: 0,
+      balance: initialBalance,
       used: 0,
       pending: 0,
     });
@@ -114,6 +151,7 @@ async function restoreBalance(userId, leaveTypeId, days, session = null) {
 }
 
 async function getUserBalances(userId) {
+  await initializeUserBalances(userId);
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");
 
@@ -126,15 +164,19 @@ async function getUserBalances(userId) {
   return user.leaveBalances.map((bal) => {
     const leaveType = map.get(bal.leaveTypeId.toString());
     const balanceDoc = balanceDocMap.get(bal.leaveTypeId.toString());
-    const code = leaveType?.code;
+    const code = String(leaveType?.code || "").toUpperCase();
     const earnedLeave = code === "EL" ? bal.balance : (balanceDoc?.earned_leave || 0);
     const sickLeave = code === "SL" ? bal.balance : (balanceDoc?.sick_leave || 0);
     const casualLeave = code === "CL" ? bal.balance : (balanceDoc?.casual_leave || 0);
+    const used = Number(bal.used || 0);
+    const pending = Number(bal.pending || 0);
+    const balance = Number(bal.balance || 0);
+    const total = balance + used;
     return {
       leaveType: {
         _id: leaveType?._id,
         name: leaveType?.name,
-        code: leaveType?.code,
+        code,
         color: leaveType?.color,
         accrualRate: leaveType?.accrualRate,
         accrualPerMonth: leaveType?.accrualPerMonth || 0,
@@ -143,10 +185,11 @@ async function getUserBalances(userId) {
         carryForwardLimit: leaveType?.carryForwardLimit || 0,
         maxConsecutiveDays: leaveType?.maxConsecutiveDays || 30,
       },
-      balance: bal.balance,
-      used: bal.used,
-      pending: bal.pending,
-      available: bal.balance - bal.pending,
+      balance,
+      used,
+      pending,
+      total,
+      available: balance - pending,
       earned_leave: earnedLeave,
       sick_leave: sickLeave,
       casual_leave: casualLeave,

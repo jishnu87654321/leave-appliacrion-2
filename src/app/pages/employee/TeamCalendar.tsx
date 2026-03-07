@@ -5,8 +5,8 @@ import { DashboardLayout } from "../../layouts/DashboardLayout";
 import { useAuth } from "../../context/AuthContext";
 import { useLeave } from "../../context/LeaveContext";
 import { getDaysInMonth, getFirstDayOfMonth, getMonthName, toInputDate } from "../../utils/dateUtils";
-import { adminService } from "../../services/adminService";
 import { calendarService } from "../../services/calendarService";
+import { holidayService } from "../../services/holidayService";
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -49,9 +49,11 @@ export default function TeamCalendar() {
   const [month, setMonth] = useState(new Date().getMonth());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [departmentFilter, setDepartmentFilter] = useState<string>("ALL");
-  const [calendarConfig, setCalendarConfig] = useState<any>(null);
+  const [holidays, setHolidays] = useState<Array<{ date: string; title: string }>>([]);
   const [holidayDate, setHolidayDate] = useState("");
   const [holidayName, setHolidayName] = useState("");
+  const [holidaySaving, setHolidaySaving] = useState(false);
+  const [holidayStatus, setHolidayStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingDay, setLoadingDay] = useState(false);
   const [summaryByDate, setSummaryByDate] = useState<Record<string, DaySummary>>({});
@@ -60,11 +62,6 @@ export default function TeamCalendar() {
   const isHRAdmin = roleKey === "HR_ADMIN";
   const isManager = roleKey === "MANAGER";
   const isEmployee = roleKey === "EMPLOYEE" || roleKey === "INTERN";
-
-  useEffect(() => {
-    if (!currentUser || (roleKey !== "HR_ADMIN" && roleKey !== "MANAGER")) return;
-    adminService.getCalendar().then((res) => setCalendarConfig(res.data.calendar)).catch(() => undefined);
-  }, [currentUser?._id, roleKey]);
 
   useEffect(() => {
     if (!currentUser || (roleKey !== "HR_ADMIN" && roleKey !== "MANAGER")) return;
@@ -103,6 +100,20 @@ export default function TeamCalendar() {
   }, [currentUser?._id, monthRange.start, monthRange.end, isHRAdmin, departmentFilter]);
 
   useEffect(() => {
+    if (!currentUser) return;
+    const loadHolidays = async () => {
+      try {
+        const response = await holidayService.list({ start: monthRange.start, end: monthRange.end });
+        setHolidays(response?.items || []);
+      } catch (error) {
+        console.error("Failed to load holidays:", error);
+        setHolidays([]);
+      }
+    };
+    loadHolidays();
+  }, [currentUser?._id, monthRange.start, monthRange.end]);
+
+  useEffect(() => {
     if (!selectedDay) {
       setSelectedDayDetails(null);
       return;
@@ -133,7 +144,7 @@ export default function TeamCalendar() {
 
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
-  const holidaySet = new Set((calendarConfig?.holidays || []).map((h: any) => h.date));
+  const holidaySet = new Set((holidays || []).map((h) => h.date));
   const departments = [...new Set(allUsers.map((u: any) => u.department).filter(Boolean))].sort();
 
   const navigateMonth = (dir: 1 | -1) => {
@@ -154,6 +165,36 @@ export default function TeamCalendar() {
 
   const openDateDetailsPage = (date: string) => {
     navigate(`${rolePrefix(roleKey)}/calendar/leaves/${date}`);
+  };
+
+  const saveHoliday = async () => {
+    const date = String(holidayDate || "").trim();
+    const title = String(holidayName || "").trim();
+    setHolidayStatus(null);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setHolidayStatus({ type: "error", text: "Please select a valid date." });
+      return;
+    }
+    if (!title) {
+      setHolidayStatus({ type: "error", text: "Please enter a holiday name." });
+      return;
+    }
+
+    try {
+      setHolidaySaving(true);
+      await holidayService.upsert({ date, title });
+      const refreshed = await holidayService.list({ start: monthRange.start, end: monthRange.end });
+      setHolidays(refreshed?.items || []);
+      setHolidayDate("");
+      setHolidayName("");
+      setHolidayStatus({ type: "success", text: "Holiday saved successfully." });
+    } catch (error: any) {
+      const message = error?.response?.data?.message || "Failed to save holiday.";
+      setHolidayStatus({ type: "error", text: message });
+    } finally {
+      setHolidaySaving(false);
+    }
   };
 
   const monthStats = useMemo(() => {
@@ -305,7 +346,7 @@ export default function TeamCalendar() {
             </div>
           </div>
 
-          {(isHRAdmin || isManager) && (
+          {isHRAdmin && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <h3 className="font-bold text-gray-900 mb-3 text-sm">Calendar Admin</h3>
               <div className="space-y-2">
@@ -323,24 +364,23 @@ export default function TeamCalendar() {
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
                 />
                 <button
-                  onClick={async () => {
-                    if (!holidayDate || !holidayName.trim() || !calendarConfig) return;
-                    const holidays = [...(calendarConfig.holidays || []).filter((h: any) => h.date !== holidayDate), { date: holidayDate, name: holidayName.trim(), isWorkingDayOverride: false }];
-                    const updated = await adminService.updateCalendar({ ...calendarConfig, holidays });
-                    setCalendarConfig(updated.data.calendar);
-                    setHolidayDate("");
-                    setHolidayName("");
-                  }}
-                  className="w-full py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold"
+                  onClick={saveHoliday}
+                  disabled={holidaySaving}
+                  className="w-full py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Add / Update Holiday
+                  {holidaySaving ? "Saving..." : "Add / Update Holiday"}
                 </button>
+                {holidayStatus && (
+                  <p className={`text-xs ${holidayStatus.type === "success" ? "text-green-600" : "text-red-600"}`}>
+                    {holidayStatus.text}
+                  </p>
+                )}
               </div>
               <div className="mt-3 space-y-1 max-h-32 overflow-y-auto">
-                {(calendarConfig?.holidays || []).slice(0, 8).map((h: any) => (
+                {(holidays || []).slice(0, 8).map((h) => (
                   <div key={h.date} className="text-xs text-gray-600 flex justify-between">
                     <span>{h.date}</span>
-                    <span>{h.name}</span>
+                    <span>{h.title}</span>
                   </div>
                 ))}
               </div>
@@ -351,4 +391,3 @@ export default function TeamCalendar() {
     </DashboardLayout>
   );
 }
-

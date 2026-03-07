@@ -34,8 +34,8 @@ async function checkDatabase() {
     }
     
     // Check for hradmin specifically
-    const hradmin = await User.findOne({ email: 'hradmin@gmail.com' });
-    console.log('\n🔍 Searching for hradmin@gmail.com:');
+    const hradmin = await User.findOne({ email: 'Subramanya@aksharaenterprises.info' });
+    console.log('\n🔍 Searching for Subramanya@aksharaenterprises.info:');
     console.log(hradmin ? `   ✅ Found: ${hradmin.name}` : '   ❌ Not found');
     
     await mongoose.connection.close();

@@ -21,13 +21,13 @@ async function findHradmin() {
         const usersCount = await mongoose.connection.collection("users").countDocuments();
         console.log(`   Users count: ${usersCount}`);
         
-        const hradmin = await mongoose.connection.collection("users").findOne({ email: "hradmin@gmail.com" });
+        const hradmin = await mongoose.connection.collection("users").findOne({ email: "Subramanya@aksharaenterprises.info" });
         if (hradmin) {
-          console.log(`   ✅ FOUND hradmin@gmail.com in database "${mongoose.connection.name}"!`);
+          console.log(`   ✅ FOUND Subramanya@aksharaenterprises.info in database "${mongoose.connection.name}"!`);
           console.log(`   Name: ${hradmin.name}`);
           console.log(`   Role: ${hradmin.role}`);
         } else {
-          console.log(`   ❌ hradmin@gmail.com not found`);
+          console.log(`   ❌ Subramanya@aksharaenterprises.info not found`);
         }
         
         await mongoose.connection.close();

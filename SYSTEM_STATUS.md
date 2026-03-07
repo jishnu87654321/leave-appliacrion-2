@@ -22,7 +22,7 @@
 ## 🔑 Login Credentials
 
 ```
-Email:    hradmin@gmail.com
+Email:    Subramanya@aksharaenterprises.info
 Password: password123
 Role:     HR_ADMIN
 ```
@@ -55,7 +55,7 @@ After:  mongodb+srv://...@cluster10.tr0pfqt.mongodb.net/test
 
 ### Database: "test"
 - Users: 8 total
-- HR Admins: 2 (hr@company.com, hradmin@gmail.com)
+- HR Admins: 2 (hr@company.com, Subramanya@aksharaenterprises.info)
 - Managers: 2
 - Employees: 4
 - Collections: users, leaverequests, leavetypes, notifications, audittrails
@@ -70,7 +70,7 @@ After:  mongodb+srv://...@cluster10.tr0pfqt.mongodb.net/test
 1. **Open browser**: http://localhost:3000
 2. **Clear cache**: Ctrl+Shift+R (or Cmd+Shift+R on Mac)
 3. **Login with**:
-   - Email: hradmin@gmail.com
+   - Email: Subramanya@aksharaenterprises.info
    - Password: password123
 4. **You'll be redirected to**: HR Dashboard
 

@@ -2,8 +2,8 @@ const axios = require('axios');
 
 const API_URL = 'http://localhost:5000/api';
 const CREDENTIALS = {
-  email: 'hradmin@gmail.com',
-  password: 'password123'
+  email: 'Subramanya@aksharaenterprises.info',
+  password: 'admin123'
 };
 
 async function testCompleteLogin() {
@@ -75,8 +75,8 @@ async function testCompleteLogin() {
     console.log('='.repeat(70));
     console.log('\n🎉 You can now login to the frontend:');
     console.log('   URL: http://localhost:5173');
-    console.log('   Email: hradmin@gmail.com');
-    console.log('   Password: password123');
+    console.log('   Email: Subramanya@aksharaenterprises.info');
+    console.log('   Password: admin123');
     console.log('='.repeat(70));
     
   } catch (error) {

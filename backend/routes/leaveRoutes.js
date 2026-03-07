@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
 const { restrictTo, canManageLeave } = require("../middleware/roleCheck");
+const { requireIdempotencyKey } = require("../middleware/requestSecurity");
+const { withIdempotency } = require("../middleware/idempotencyStore");
 const {
   applyLeave,
   getMyLeaves,
@@ -24,7 +26,7 @@ const { hrOverrideLeave } = require("../controllers/hrOverrideController");
 router.use(protect);
 
 // Employee routes
-router.post("/apply", applyLeave);
+router.post("/apply", requireIdempotencyKey, withIdempotency("apply_leave"), applyLeave);
 router.get("/my-leaves", getMyLeaves);
 router.get("/my", getMyLeaves);
 router.get("/balance", getMyBalance);
@@ -39,12 +41,12 @@ router.put("/:id/cancel", cancelLeave);
 // Manager routes - can access all leaves and approve/reject
 router.get("/team/requests", restrictTo("MANAGER", "HR_ADMIN"), getTeamLeaves);
 router.get("/", restrictTo("MANAGER", "HR_ADMIN"), getAllLeaves);
-router.put("/:id/approve", restrictTo("MANAGER"), canManageLeave, approveLeave);
-router.patch("/:id/approve", restrictTo("MANAGER"), canManageLeave, approveLeave);
-router.post("/approve/:id", restrictTo("MANAGER"), canManageLeave, approveLeave);
-router.put("/:id/reject", restrictTo("MANAGER"), canManageLeave, rejectLeave);
-router.patch("/:id/reject", restrictTo("MANAGER"), canManageLeave, rejectLeave);
-router.post("/reject/:id", restrictTo("MANAGER"), canManageLeave, rejectLeave);
+router.put("/:id/approve", restrictTo("MANAGER", "HR_ADMIN"), canManageLeave, approveLeave);
+router.patch("/:id/approve", restrictTo("MANAGER", "HR_ADMIN"), canManageLeave, approveLeave);
+router.post("/approve/:id", restrictTo("MANAGER", "HR_ADMIN"), canManageLeave, approveLeave);
+router.put("/:id/reject", restrictTo("MANAGER", "HR_ADMIN"), canManageLeave, rejectLeave);
+router.patch("/:id/reject", restrictTo("MANAGER", "HR_ADMIN"), canManageLeave, rejectLeave);
+router.post("/reject/:id", restrictTo("MANAGER", "HR_ADMIN"), canManageLeave, rejectLeave);
 router.put("/:id/force-cancel", restrictTo("HR_ADMIN"), forceCancelLeave);
 
 // HR Admin only routes

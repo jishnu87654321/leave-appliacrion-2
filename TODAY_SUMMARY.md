@@ -100,7 +100,7 @@ node test-hradmin-login.js
 
 ### Login Credentials
 ```
-Email:    hradmin@gmail.com
+Email:    Subramanya@aksharaenterprises.info
 Password: admin123
 Role:     HR_ADMIN
 ```

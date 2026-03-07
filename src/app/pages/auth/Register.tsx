@@ -23,7 +23,7 @@ export default function Register() {
   const validate = () => {
     if (!form.name.trim()) return "Full name is required.";
     if (!form.email.trim()) return "Email is required.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return "Enter a valid email address.";
+    if (!/^[^\s@]+@[^\s@]+$/.test(form.email)) return "Enter a valid email address.";
     if (form.password.length < 6) return "Password must be at least 6 characters.";
     if (form.password !== form.confirmPassword) return "Passwords do not match.";
     if (!form.department) return "Please select a department.";

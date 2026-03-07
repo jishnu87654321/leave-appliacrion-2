@@ -28,14 +28,14 @@ async function checkConnection() {
     console.log(`\nTotal users in 'users' collection: ${usersCount}`);
     
     // Find hradmin
-    const hradmin = await mongoose.connection.collection("users").findOne({ email: "hradmin@gmail.com" });
+    const hradmin = await mongoose.connection.collection("users").findOne({ email: "Subramanya@aksharaenterprises.info" });
     if (hradmin) {
-      console.log("\n✅ hradmin@gmail.com FOUND!");
+      console.log("\n✅ Subramanya@aksharaenterprises.info FOUND!");
       console.log("Name:", hradmin.name);
       console.log("Role:", hradmin.role);
       console.log("Active:", hradmin.isActive);
     } else {
-      console.log("\n❌ hradmin@gmail.com NOT FOUND!");
+      console.log("\n❌ Subramanya@aksharaenterprises.info NOT FOUND!");
     }
     
     await mongoose.connection.close();

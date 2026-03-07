@@ -3,16 +3,21 @@ const AuditTrail = require("../models/AuditTrail");
 const Notification = require("../models/Notification");
 const DepartmentChangeRequest = require("../models/DepartmentChangeRequest");
 const LeaveCreditLog = require("../models/LeaveCreditLog");
+const LeaveBalance = require("../models/LeaveBalance");
+const LeaveType = require("../models/LeaveType");
 const { AppError } = require("../middleware/errorHandler");
 const { initializeUserBalances, getUserBalances } = require("../services/leaveBalanceService");
 const { canonicalRole, normalizeRoleForDb } = require("../utils/roles");
+const { queueAdminEventNotification } = require("../services/notificationMailer");
+const { escapeRegex } = require("../config/security");
+const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
 
 /**
  * POST /api/users — Create new user (HR only)
  */
 exports.createUser = async (req, res, next) => {
   try {
-    const { name, email, password, role, department, designation, phone, isActive } = req.body;
+    const { name, email, password, role, department, designation, phone, isActive, probationStatus } = req.body;
 
     // Validate required fields
     if (!name || !email || !password || !department) {
@@ -27,6 +32,8 @@ exports.createUser = async (req, res, next) => {
 
     const normalizedRole = normalizeRoleForDb(role || "employee");
 
+    const isOnProbation = probationStatus === undefined ? false : Boolean(probationStatus);
+
     // Create user
     const user = await User.create({
       name: name.trim(),
@@ -37,8 +44,8 @@ exports.createUser = async (req, res, next) => {
       designation: designation?.trim() || "",
       phone: phone?.trim() || "",
       isActive: isActive !== undefined ? isActive : true,
-      probationStatus: true,
-      probationEndDate: new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
+      probationStatus: isOnProbation,
+      probationEndDate: isOnProbation ? new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000) : null,
     });
 
     // Initialize leave balances
@@ -81,6 +88,17 @@ exports.createUser = async (req, res, next) => {
       type: "SUCCESS",
     });
 
+    queueAdminEventNotification("NEW_EMPLOYEE_REGISTRATION", {
+      employeeName: user.name,
+      employeeEmail: user.email,
+      department: user.department,
+      role: user.role,
+      registrationTime: new Date().toISOString(),
+      activationStatus: user.isActive ? "Active" : "Pending Activation",
+      createdBy: req.user.name,
+      source: "HR User Creation",
+    });
+
     res.status(201).json({ 
       success: true, 
       message: "User created successfully.", 
@@ -98,10 +116,25 @@ exports.getAllUsers = async (req, res, next) => {
   try {
     const { role, department, isActive, page = 1, limit = 50, search } = req.query;
     const query = {};
+    const requesterRole = canonicalRole(req.user.role);
     if (role) query.role = normalizeRoleForDb(role);
     if (department) query.department = department;
     if (isActive !== undefined) query.isActive = isActive === "true";
-    if (search) query.$or = [{ name: new RegExp(search, "i") }, { email: new RegExp(search, "i") }];
+    if (search) {
+      const safeSearch = escapeRegex(String(search).slice(0, 100));
+      query.$or = [{ name: new RegExp(safeSearch, "i") }, { email: new RegExp(safeSearch, "i") }];
+    }
+
+    // Zero-trust data boundary: managers can only list their own team.
+    if (requesterRole === "MANAGER") {
+      const teamScope = { $or: [{ managerId: req.user._id }, { _id: req.user._id }] };
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, teamScope];
+        delete query.$or;
+      } else {
+        Object.assign(query, teamScope);
+      }
+    }
 
     const total = await User.countDocuments(query);
     const users = await User.find(query)
@@ -124,6 +157,19 @@ exports.getUserById = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id).populate("managerId", "name email department");
     if (!user) return next(new AppError("User not found.", 404));
+
+    if (canonicalRole(req.user.role) === "MANAGER") {
+      const isSelf = req.user._id.toString() === user._id.toString();
+      const inTeam = user.managerId?._id?.toString() === req.user._id.toString();
+      if (!isSelf && !inTeam) {
+        logSecurityEvent(SECURITY_EVENTS.ACCESS_IDOR_BLOCKED, {
+          actorId: req.user._id.toString(),
+          targetId: req.params.id,
+        });
+        return next(new AppError("Managers can only view users in their team.", 403));
+      }
+    }
+
     res.json({ success: true, data: { user } });
   } catch (err) {
     next(err);
@@ -283,6 +329,14 @@ exports.activateUser = async (req, res, next) => {
       targetModel: "User",
     });
 
+    queueAdminEventNotification("USER_ACTIVATION_STATUS_CHANGED", {
+      employeeName: user.name,
+      employeeEmail: user.email,
+      status: "Activated",
+      changedBy: req.user.name,
+      timestamp: new Date().toISOString(),
+    });
+
     res.json({ success: true, message: "User activated successfully.", data: { user } });
   } catch (err) {
     next(err);
@@ -310,6 +364,14 @@ exports.deactivateUser = async (req, res, next) => {
       targetId: user._id,
       targetModel: "User",
       severity: "MEDIUM",
+    });
+
+    queueAdminEventNotification("USER_ACTIVATION_STATUS_CHANGED", {
+      employeeName: user.name,
+      employeeEmail: user.email,
+      status: "Deactivated",
+      changedBy: req.user.name,
+      timestamp: new Date().toISOString(),
     });
 
     res.json({ success: true, message: "User deactivated successfully.", data: { user } });
@@ -363,24 +425,56 @@ exports.assignManager = async (req, res, next) => {
 exports.updateLeaveBalance = async (req, res, next) => {
   try {
     const { leaveTypeId, balance, reason } = req.body;
+    const nextBalance = Number(balance);
     
     if (!reason?.trim()) {
       return next(new AppError("Reason for balance adjustment is required.", 400));
+    }
+    if (!leaveTypeId) {
+      return next(new AppError("leaveTypeId is required.", 400));
+    }
+    if (!Number.isFinite(nextBalance)) {
+      return next(new AppError("Balance must be a valid number.", 400));
     }
     
     const user = await User.findById(req.params.id);
     if (!user) return next(new AppError("User not found.", 404));
 
+    const leaveTypes = await LeaveType.find({ code: { $in: ["EL", "SL"] } }).select("_id code").lean();
+    const leaveTypeByCode = new Map(leaveTypes.map((lt) => [lt.code, String(lt._id)]));
+    const getBalanceForCode = (code) => {
+      const typeId = leaveTypeByCode.get(code);
+      if (!typeId) return 0;
+      const entry = user.leaveBalances.find((b) => String(b.leaveTypeId) === typeId);
+      return entry ? Number(entry.balance || 0) : 0;
+    };
+    const oldEarnedLeave = getBalanceForCode("EL");
+    const oldSickLeave = getBalanceForCode("SL");
+
     const balIdx = user.leaveBalances.findIndex(b => b.leaveTypeId.toString() === leaveTypeId);
     const oldBalance = balIdx >= 0 ? user.leaveBalances[balIdx].balance : 0;
     
     if (balIdx >= 0) {
-      user.leaveBalances[balIdx].balance = balance;
+      user.leaveBalances[balIdx].balance = nextBalance;
     } else {
-      user.leaveBalances.push({ leaveTypeId, balance, used: 0, pending: 0 });
+      user.leaveBalances.push({ leaveTypeId, balance: nextBalance, used: 0, pending: 0 });
     }
 
     await user.save();
+
+    const updatedBal = user.leaveBalances.find(b => b.leaveTypeId.toString() === leaveTypeId);
+    await LeaveBalance.findOneAndUpdate(
+      { userId: user._id, leaveTypeId },
+      {
+        $set: {
+          balance: updatedBal?.balance ?? nextBalance,
+          used: updatedBal?.used || 0,
+          pending: updatedBal?.pending || 0,
+          updated_at: new Date(),
+        },
+      },
+      { upsert: true, new: true }
+    );
 
     // Notify user about balance adjustment
     await Notification.create({
@@ -401,10 +495,27 @@ exports.updateLeaveBalance = async (req, res, next) => {
       metadata: { 
         leaveTypeId: leaveTypeId.toString(), 
         oldBalance: oldBalance.toString(), 
-        newBalance: balance.toString(),
+        newBalance: nextBalance.toString(),
         reason 
       },
       severity: "HIGH",
+    });
+
+    const newEarnedLeave = getBalanceForCode("EL");
+    const newSickLeave = getBalanceForCode("SL");
+    queueAdminEventNotification("LEAVE_BALANCE_MANUALLY_UPDATED", {
+      employeeName: user.name,
+      employeeEmail: user.email,
+      leaveTypeId: leaveTypeId.toString(),
+      oldBalanceForType: oldBalance,
+      newBalanceForType: nextBalance,
+      oldEarnedLeave,
+      newEarnedLeave,
+      oldSickLeave,
+      newSickLeave,
+      changedBy: req.user.name,
+      reason,
+      timestamp: new Date().toISOString(),
     });
 
     res.json({ 
@@ -413,7 +524,7 @@ exports.updateLeaveBalance = async (req, res, next) => {
       data: { 
         user,
         oldBalance,
-        newBalance: balance
+        newBalance: nextBalance
       } 
     });
   } catch (err) {
@@ -433,9 +544,13 @@ exports.getUserLeaveBalances = async (req, res, next) => {
         if (code === "EL") acc.earned_leave = bal.balance;
         if (code === "SL") acc.sick_leave = bal.balance;
         if (code === "CL") acc.casual_leave = bal.balance;
+        acc.used += Number(bal.used || 0);
+        acc.pending += Number(bal.pending || 0);
+        acc.total += Number(bal.total ?? (Number(bal.balance || 0) + Number(bal.used || 0)));
+        acc.remaining += Number(bal.balance || 0);
         return acc;
       },
-      { earned_leave: 0, sick_leave: 0, casual_leave: 0 }
+      { earned_leave: 0, sick_leave: 0, casual_leave: 0, used: 0, pending: 0, total: 0, remaining: 0 }
     );
     const lastCredit = await LeaveCreditLog.findOne({ userId: req.params.id }).sort({ month: -1, createdAt: -1 });
     const now = new Date();

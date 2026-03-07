@@ -24,6 +24,12 @@ const leaveRequestSchema = new mongoose.Schema({
   currentApprovalLevel: { type: Number, default: 1 },
   comments: { type: String, trim: true, default: "" },
   attachmentUrl: { type: String, default: null },
+  document: {
+    url: { type: String, default: null },
+    originalName: { type: String, default: null },
+    mimeType: { type: String, default: null },
+    uploadedAt: { type: Date, default: null },
+  },
   attachment: {
     fileName: { type: String, default: null },
     mimeType: { type: String, default: null },

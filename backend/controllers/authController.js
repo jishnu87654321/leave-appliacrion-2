@@ -4,10 +4,21 @@ const Notification = require("../models/Notification");
 const { AppError } = require("../middleware/errorHandler");
 const { generateToken } = require("../middleware/auth");
 const { sendEmail } = require("../services/emailService");
+const { queueAdminEventNotification } = require("../services/notificationMailer");
 const { validationResult } = require("express-validator");
 const { initializeUserBalances } = require("../services/leaveBalanceService");
 const crypto = require("crypto");
 const { canonicalRole, normalizeRoleForDb } = require("../utils/roles");
+const { isPasswordCompromised } = require("../services/pwnedPasswordService");
+const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
+
+const cookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  path: "/",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});
 
 const sendTokenResponse = (user, statusCode, res) => {
   const token = generateToken({
@@ -18,8 +29,11 @@ const sendTokenResponse = (user, statusCode, res) => {
   });
   const userObj = user.toObject();
   delete userObj.password;
+  delete userObj.failedLoginAttempts;
+  delete userObj.lockUntil;
   userObj.role = normalizeRoleForDb(userObj.role);
-  res.status(statusCode).json({ success: true, token, data: { user: userObj } });
+  res.cookie("jwt", token, cookieOptions());
+  res.status(statusCode).json({ success: true, data: { user: userObj } });
 };
 
 exports.register = async (req, res, next) => {
@@ -28,6 +42,11 @@ exports.register = async (req, res, next) => {
     if (!errors.isEmpty()) return next(new AppError(errors.array()[0].msg, 400));
 
     const { name, email, password, department, designation, phone, role } = req.body;
+
+    if (await isPasswordCompromised(password)) {
+      return next(new AppError("Password has appeared in known breaches. Choose a different password.", 400));
+    }
+
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) return next(new AppError("Email already registered.", 409));
 
@@ -91,6 +110,15 @@ exports.register = async (req, res, next) => {
         ? "Registration successful. Your manager account will be reviewed and activated by HR Admin."
         : "Registration successful. Your account will be activated by HR Admin.";
 
+    queueAdminEventNotification("NEW_EMPLOYEE_REGISTRATION", {
+      employeeName: user.name,
+      employeeEmail: user.email,
+      department: user.department,
+      role: requestedRole,
+      registrationTime: new Date().toISOString(),
+      activationStatus: user.isActive ? "Active" : "Pending Activation",
+    });
+
     res.status(201).json({ success: true, message: successMessage });
   } catch (err) {
     next(err);
@@ -102,27 +130,43 @@ exports.login = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return next(new AppError(errors.array()[0].msg, 400));
 
-    const { email, password } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
+    const normalizedEmail = String(req.body?.email || "").trim().toLowerCase();
+    const rawPassword = String(req.body?.password || "");
+    const trimmedPassword = rawPassword.trim();
+
+    const user = await User.findOne({ email: normalizedEmail }).select("+password +failedLoginAttempts +lockUntil");
 
     if (!user) {
-      if (process.env.NODE_ENV !== "production") console.log(`Login failed: User not found for ${email}`);
+      logSecurityEvent(SECURITY_EVENTS.AUTH_LOGIN_FAILED, { email: normalizedEmail, reason: "user_not_found", ip: req.ip });
+      if (process.env.NODE_ENV !== "production") console.log(`Login failed: User not found for ${normalizedEmail}`);
       return next(new AppError("Invalid email or password.", 401));
+    }
+    if (user.isAccountLocked()) {
+      logSecurityEvent(SECURITY_EVENTS.AUTH_ACCOUNT_LOCKED, { email: normalizedEmail, ip: req.ip });
+      return next(new AppError("Account temporarily locked after repeated login failures. Try again later.", 423));
     }
 
-    const isPasswordValid = await user.comparePassword(password);
+    // First try exact password, then a trimmed fallback to tolerate accidental spaces.
+    let isPasswordValid = await user.comparePassword(rawPassword);
+    if (!isPasswordValid && trimmedPassword !== rawPassword) {
+      isPasswordValid = await user.comparePassword(trimmedPassword);
+    }
     if (!isPasswordValid) {
-      if (process.env.NODE_ENV !== "production") console.log(`Login failed: Invalid password for ${email}`);
+      await user.registerFailedLogin();
+      logSecurityEvent(SECURITY_EVENTS.AUTH_LOGIN_FAILED, { email: normalizedEmail, reason: "invalid_password", ip: req.ip });
+      if (process.env.NODE_ENV !== "production") console.log(`Login failed: Invalid password for ${normalizedEmail}`);
       return next(new AppError("Invalid email or password.", 401));
     }
+    await user.resetLoginAttempts();
 
     if (!user.isActive) {
-      if (process.env.NODE_ENV !== "production") console.log(`Login failed: Inactive account ${email}`);
+      if (process.env.NODE_ENV !== "production") console.log(`Login failed: Inactive account ${normalizedEmail}`);
       return next(new AppError("Account not activated. Contact HR.", 403));
     }
 
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
+    logSecurityEvent(SECURITY_EVENTS.AUTH_LOGIN_SUCCESS, { email: normalizedEmail, ip: req.ip });
 
     await AuditTrail.log({
       action: "User Login",
@@ -154,12 +198,16 @@ exports.getMe = async (req, res, next) => {
 exports.updatePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
+    if (await isPasswordCompromised(newPassword)) {
+      return next(new AppError("Password has appeared in known breaches. Choose a different password.", 400));
+    }
     const user = await User.findById(req.user._id).select("+password");
     if (!(await user.comparePassword(currentPassword))) return next(new AppError("Current password is incorrect.", 401));
     if (newPassword.length < 6) return next(new AppError("Password must be at least 6 characters.", 400));
     user.password = newPassword;
     await user.save();
     await AuditTrail.log({ action: "Password Changed", category: "AUTH", performedBy: user._id, performedByName: user.name, performedByRole: user.role, target: user.email, severity: "MEDIUM" });
+    logSecurityEvent(SECURITY_EVENTS.AUTH_PASSWORD_CHANGED, { userId: user._id.toString() });
     sendTokenResponse(user, 200, res);
   } catch (err) {
     next(err);
@@ -178,6 +226,7 @@ exports.forgotPassword = async (req, res, next) => {
 
     const resetURL = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password/${resetToken}`;
     await sendEmail({ to: user.email, subject: "Password Reset Request - LeaveMS", html: `<p>Hello ${user.name},</p><p>Reset your password <a href="${resetURL}">here</a>. This link expires in 1 hour.</p>` });
+    logSecurityEvent(SECURITY_EVENTS.AUTH_PASSWORD_RESET_REQUESTED, { userId: user._id.toString() });
 
     res.json({ success: true, message: "Password reset link sent to your email." });
   } catch (err) {
@@ -187,5 +236,6 @@ exports.forgotPassword = async (req, res, next) => {
 
 exports.logout = async (req, res) => {
   await AuditTrail.log({ action: "User Logout", category: "AUTH", performedBy: req.user._id, performedByName: req.user.name, performedByRole: req.user.role, target: req.user.email, severity: "LOW" });
+  res.clearCookie("jwt", cookieOptions());
   res.json({ success: true, message: "Logged out successfully." });
 };

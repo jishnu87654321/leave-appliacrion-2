@@ -5,6 +5,7 @@ const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
 const { creditMonthlyLeaves } = require("../services/monthlyCredit");
 const POLICY = require("../config/policy");
+const { queueAdminEventNotification, sendAdminNotification } = require("../services/notificationMailer");
 
 function devLog(message, data) {
   if (process.env.NODE_ENV !== "production") {
@@ -76,6 +77,16 @@ exports.upsertCalendar = async (req, res, next) => {
       metadata: { holidaysCount: String(calendar.holidays.length) },
     });
 
+    queueAdminEventNotification("HOLIDAY_CALENDAR_UPDATED", {
+      updateType: "Calendar Config Updated",
+      holidayCount: calendar.holidays.length,
+      monthlyCreditDay: calendar.monthlyCreditDay,
+      timezone: calendar.timezone,
+      changedBy: req.user.name,
+      changedByEmail: req.user.email,
+      timestamp: new Date().toISOString(),
+    });
+
     res.json({ success: true, message: "Calendar updated.", data: { calendar } });
   } catch (err) {
     next(err);
@@ -98,6 +109,36 @@ exports.runMonthlyAccrual = async (req, res, next) => {
     });
 
     res.json({ success: true, message: "Monthly credit completed.", data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.testAdminEmail = async (req, res, next) => {
+  try {
+    const result = await sendAdminNotification(
+      "Admin Test Email - Leave Management System",
+      `Admin test email triggered by ${req.user.name} (${req.user.email}) at ${new Date().toISOString()}.`,
+      {
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:16px;color:#111827;">
+            <h2>Admin Test Email</h2>
+            <p>This is a test email from Leave Management System.</p>
+            <p>Triggered By: ${req.user.name} (${req.user.email})</p>
+            <p>Timestamp: ${new Date().toISOString()}</p>
+          </div>
+        `,
+      }
+    );
+
+    if (!result.success && !result.skipped) {
+      return next(new AppError(`Failed to send test email: ${result.error || "Unknown error"}`, 500));
+    }
+
+    return res.json({
+      success: true,
+      message: result.success ? "Email sent successfully" : "Email skipped due to SMTP configuration",
+    });
   } catch (err) {
     next(err);
   }

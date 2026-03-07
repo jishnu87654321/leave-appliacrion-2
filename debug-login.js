@@ -56,7 +56,7 @@ const debugLogin = async () => {
 
       const admin = await User.create({
         name: "HR Administrator",
-        email: "hradmin@gmail.com",
+        email: "Subramanya@aksharaenterprises.info",
         password: hashedPassword,
         role: "HR_ADMIN",
         department: "Human Resources",
@@ -71,7 +71,7 @@ const debugLogin = async () => {
 
     // Step 2: Find admin user
     console.log("Step 2: Looking for admin user...");
-    const admin = await User.findOne({ email: "hradmin@gmail.com" }).select("+password");
+    const admin = await User.findOne({ email: "Subramanya@aksharaenterprises.info" }).select("+password");
     
     if (!admin) {
       console.log("❌ Admin user not found!");
@@ -118,7 +118,7 @@ const debugLogin = async () => {
     console.log("Step 5: Testing login API...");
     try {
       const loginResponse = await axios.post("http://localhost:5000/api/auth/login", {
-        email: "hradmin@gmail.com",
+        email: "Subramanya@aksharaenterprises.info",
         password: "password123",
       });
 
@@ -148,7 +148,7 @@ const debugLogin = async () => {
     console.log("✅ ALL CHECKS PASSED!");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("\n🎉 You can now login with:");
-    console.log("   Email: hradmin@gmail.com");
+    console.log("   Email: Subramanya@aksharaenterprises.info");
     console.log("   Password: password123\n");
     console.log("📍 Frontend: http://localhost:5173");
     console.log("📍 Backend: http://localhost:5000\n");

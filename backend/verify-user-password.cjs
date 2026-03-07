@@ -17,7 +17,7 @@ async function verifyUserPassword() {
       isActive: Boolean,
     }));
 
-    const user = await User.findOne({ email: 'hradmin@gmail.com' }).select('+password');
+    const user = await User.findOne({ email: 'Subramanya@aksharaenterprises.info' }).select('+password');
     
     if (!user) {
       console.log('❌ User not found!');
@@ -35,11 +35,11 @@ async function verifyUserPassword() {
     
     // Test password comparison
     console.log('\n🔐 Testing password comparison...');
-    const testPassword = 'password123';
+    const testPassword = 'admin123';
     
     try {
       const isMatch = await bcrypt.compare(testPassword, user.password);
-      console.log('  Password "password123":', isMatch ? '✅ MATCHES' : '❌ DOES NOT MATCH');
+      console.log('  Password "admin123":', isMatch ? '✅ MATCHES' : '❌ DOES NOT MATCH');
       
       if (!isMatch) {
         console.log('\n🔧 Password does not match. Resetting...');
@@ -50,7 +50,7 @@ async function verifyUserPassword() {
         
         // Update directly without triggering pre-save hook
         await User.updateOne(
-          { email: 'hradmin@gmail.com' },
+          { email: 'Subramanya@aksharaenterprises.info' },
           { 
             $set: { 
               password: hashedPassword,
@@ -62,7 +62,7 @@ async function verifyUserPassword() {
         console.log('✅ Password reset successfully');
         
         // Verify the new password
-        const updatedUser = await User.findOne({ email: 'hradmin@gmail.com' }).select('+password');
+        const updatedUser = await User.findOne({ email: 'Subramanya@aksharaenterprises.info' }).select('+password');
         const newMatch = await bcrypt.compare(testPassword, updatedUser.password);
         console.log('  Verification:', newMatch ? '✅ Password now works!' : '❌ Still not working');
       }

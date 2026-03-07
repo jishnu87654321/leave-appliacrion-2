@@ -136,8 +136,8 @@ const seedLeaveDatabase = async () => {
     console.log("\n👤 Creating HR Admin...");
     const hrAdmin = await User.create({
       name: "HR Admin",
-      email: "hradmin@gmail.com",
-      password: "password123",
+      email: "Subramanya@aksharaenterprises.info",
+      password: "admin123",
       role: "HR_ADMIN",
       department: "Human Resources",
       designation: "HR Manager",
@@ -464,7 +464,7 @@ const seedLeaveDatabase = async () => {
     
     console.log("\n📧 Login Credentials:");
     console.log("━".repeat(60));
-    console.log("HR Admin:    hradmin@gmail.com / password123");
+    console.log("HR Admin:    Subramanya@aksharaenterprises.info / admin123");
     console.log("Manager 1:   johnmanager@gmail.com / password123");
     console.log("Manager 2:   sarahmanager@gmail.com / password123");
     console.log("Employee 1:  alicedev@gmail.com / password123");

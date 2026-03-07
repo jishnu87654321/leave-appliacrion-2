@@ -6,6 +6,7 @@ const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
 const { calculateWorkingDaysWithCalendar } = require("../services/calendarService");
 const { notifyLeaveEvent } = require("../services/notificationService");
+const { queueAdminEventNotification } = require("../services/notificationMailer");
 const { 
   addToPending, 
   deductLeaveBalance, 
@@ -20,6 +21,46 @@ const path = require("path");
 const fs = require("fs");
 const LeaveCreditLog = require("../models/LeaveCreditLog");
 const { canonicalRole } = require("../utils/roles");
+const {
+  sanitizeFileName,
+  isAllowedMimeType,
+  hasMatchingMagicBytes,
+} = require("../config/security");
+const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
+
+const buildDocumentPayload = (leave) => {
+  const doc = leave?.document || {};
+  if (doc.url) {
+    return {
+      url: doc.url,
+      originalName: doc.originalName || null,
+      mimeType: doc.mimeType || null,
+      uploadedAt: doc.uploadedAt || null,
+    };
+  }
+
+  if (leave?.attachmentUrl || leave?.attachment?.storagePath) {
+    const storagePath = leave?.attachment?.storagePath || "";
+    const fallbackFromPath = storagePath ? `/uploads/leave-attachments/${path.basename(storagePath)}` : null;
+    const fallbackUrl = leave.attachmentUrl || fallbackFromPath;
+    return {
+      url: fallbackUrl,
+      originalName: leave?.attachment?.fileName || null,
+      mimeType: leave?.attachment?.mimeType || null,
+      uploadedAt: leave?.attachment?.uploadedAt || null,
+    };
+  }
+
+  return null;
+};
+
+const mapLeaveForResponse = (leave) => {
+  const plain = leave?.toObject ? leave.toObject() : leave;
+  return {
+    ...plain,
+    document: buildDocumentPayload(plain),
+  };
+};
 
 /**
  * POST /api/leaves — Apply for leave
@@ -85,19 +126,60 @@ exports.applyLeave = async (req, res, next) => {
     }
 
     let attachmentMeta = null;
+    let documentMeta = null;
     if (attachment?.base64 && attachment?.fileName) {
+      const mimeType = String(attachment.mimeType || "application/octet-stream").toLowerCase();
+      if (!isAllowedMimeType(mimeType)) {
+        logSecurityEvent(SECURITY_EVENTS.FILE_UPLOAD_REJECTED, {
+          reason: "mime_not_allowed",
+          mimeType,
+          userId: req.user._id.toString(),
+        });
+        return next(new AppError("Attachment type is not allowed.", 400));
+      }
+
+      const fileBuffer = Buffer.from(attachment.base64, "base64");
+      if (fileBuffer.byteLength > 5 * 1024 * 1024) {
+        logSecurityEvent(SECURITY_EVENTS.FILE_UPLOAD_REJECTED, {
+          reason: "file_too_large",
+          mimeType,
+          userId: req.user._id.toString(),
+        });
+        return next(new AppError("Attachment exceeds maximum size (5MB).", 400));
+      }
+      if (!hasMatchingMagicBytes(fileBuffer, mimeType)) {
+        logSecurityEvent(SECURITY_EVENTS.FILE_UPLOAD_REJECTED, {
+          reason: "magic_bytes_mismatch",
+          mimeType,
+          userId: req.user._id.toString(),
+        });
+        return next(new AppError("Attachment content does not match declared file type.", 400));
+      }
+
       const uploadDir = path.join(__dirname, "..", "uploads", "leave-attachments");
       fs.mkdirSync(uploadDir, { recursive: true });
-      const safeName = `${Date.now()}-${attachment.fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+      const safeName = `${Date.now()}-${sanitizeFileName(attachment.fileName)}`;
       const storagePath = path.join(uploadDir, safeName);
-      fs.writeFileSync(storagePath, Buffer.from(attachment.base64, "base64"));
+      fs.writeFileSync(storagePath, fileBuffer);
+      const publicUrl = `/uploads/leave-attachments/${safeName}`;
       attachmentMeta = {
         fileName: attachment.fileName,
-        mimeType: attachment.mimeType || "application/octet-stream",
-        size: attachment.size || Buffer.byteLength(attachment.base64, "base64"),
+        mimeType,
+        size: attachment.size || fileBuffer.byteLength,
         storagePath,
         uploadedAt: new Date(),
       };
+      documentMeta = {
+        url: publicUrl,
+        originalName: attachment.fileName,
+        mimeType,
+        uploadedAt: new Date(),
+      };
+      logSecurityEvent(SECURITY_EVENTS.FILE_UPLOAD_ACCEPTED, {
+        mimeType,
+        size: fileBuffer.byteLength,
+        userId: req.user._id.toString(),
+      });
     }
 
     const leaveRequest = await LeaveRequest.create({
@@ -112,7 +194,8 @@ exports.applyLeave = async (req, res, next) => {
       status: initialStatus,
       appliedBalanceBefore: balance,
       isEmergency: isEmergency || false,
-      attachmentUrl: attachmentMeta ? `/api/leaves/${req.user._id}/attachments/${path.basename(attachmentMeta.storagePath)}` : null,
+      attachmentUrl: documentMeta?.url || (attachmentMeta ? `/api/leaves/${req.user._id}/attachments/${path.basename(attachmentMeta.storagePath)}` : null),
+      document: documentMeta,
       attachment: attachmentMeta,
     });
 
@@ -131,6 +214,18 @@ exports.applyLeave = async (req, res, next) => {
 
     await AuditTrail.log({ action: "Leave Application Submitted", category: "LEAVE", performedBy: req.user._id, performedByName: user.name, performedByRole: user.role, target: `${leaveType.name} (${totalDays} days)`, targetId: leaveRequest._id, targetModel: "LeaveRequest", metadata: { leaveType: leaveType.name, days: totalDays.toString(), fromDate, toDate } });
 
+    queueAdminEventNotification("LEAVE_APPLICATION_SUBMITTED", {
+      employeeName: user.name,
+      employeeEmail: user.email,
+      leaveType: leaveType.name,
+      startDate: fromDate,
+      endDate: halfDay ? fromDate : toDate,
+      numberOfDays: totalDays,
+      reason: reason?.trim() || "",
+      status: initialStatus,
+      documentAttached: attachmentMeta || documentMeta ? "Yes" : "No",
+    });
+
     res.status(201).json({
       success: true,
       message:
@@ -138,7 +233,7 @@ exports.applyLeave = async (req, res, next) => {
           ? "Leave request submitted successfully. Waiting for HR approval."
           : "Leave request submitted successfully.",
       data: {
-        leaveRequest: await leaveRequest.populate(["employee", "leaveType"]),
+        leaveRequest: mapLeaveForResponse(await leaveRequest.populate(["employee", "leaveType"])),
         notificationsQueued: true,
       },
     });
@@ -165,7 +260,13 @@ exports.getMyLeaves = async (req, res, next) => {
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
-    res.json({ success: true, count: leaves.length, total, pages: Math.ceil(total / limit), data: { leaves } });
+    res.json({
+      success: true,
+      count: leaves.length,
+      total,
+      pages: Math.ceil(total / limit),
+      data: { leaves: leaves.map(mapLeaveForResponse) },
+    });
   } catch (err) { next(err); }
 };
 
@@ -180,7 +281,7 @@ exports.getTeamLeaves = async (req, res, next) => {
     const query = { employee: { $in: teamIds } };
     if (status) query.status = status;
     const leaves = await LeaveRequest.find(query).populate("employee", "name email role department designation avatar probationStatus").populate("leaveType", "name code color requiresDocument").sort({ status: 1, createdAt: -1 });
-    res.json({ success: true, count: leaves.length, data: { leaves } });
+    res.json({ success: true, count: leaves.length, data: { leaves: leaves.map(mapLeaveForResponse) } });
   } catch (err) { next(err); }
 };
 
@@ -203,7 +304,13 @@ exports.getAllLeaves = async (req, res, next) => {
       LeaveRequest.find(query).populate("employee", "name email role department designation avatar probationStatus leaveBalances").populate("leaveType", "name code color requiresDocument").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(parseInt(limit)),
       LeaveRequest.countDocuments(query),
     ]);
-    res.json({ success: true, count: leaves.length, total, pages: Math.ceil(total / limit), data: { leaves } });
+    res.json({
+      success: true,
+      count: leaves.length,
+      total,
+      pages: Math.ceil(total / limit),
+      data: { leaves: leaves.map(mapLeaveForResponse) },
+    });
   } catch (err) { next(err); }
 };
 
@@ -283,6 +390,17 @@ exports.approveLeave = async (req, res, next) => {
       severity: "LOW" 
     });
 
+    queueAdminEventNotification("LEAVE_APPROVED", {
+      employeeName: leaveReq.employee.name,
+      employeeEmail: leaveReq.employee.email,
+      leaveType: leaveReq.leaveType.name,
+      actionTaken: "APPROVED",
+      approverName: req.user.name,
+      approverRole: req.user.role,
+      timestamp: new Date().toISOString(),
+      comment: comment || "",
+    });
+
     // Fetch updated employee data for response
     const updatedEmployee = await User.findById(leaveReq.employee._id).select("leaveBalances");
     
@@ -291,11 +409,11 @@ exports.approveLeave = async (req, res, next) => {
       .populate("employee", "name email department designation avatar leaveBalances")
       .populate("leaveType", "name code color");
 
-    res.json({ 
+    res.json({
       success: true, 
       message: "Leave request approved successfully.", 
       data: { 
-        leaveRequest: populatedLeaveReq,
+        leaveRequest: mapLeaveForResponse(populatedLeaveReq),
         updatedBalances: updatedEmployee.leaveBalances
       } 
     });
@@ -383,6 +501,17 @@ exports.rejectLeave = async (req, res, next) => {
       severity: "MEDIUM" 
     });
 
+    queueAdminEventNotification("LEAVE_REJECTED", {
+      employeeName: leaveReq.employee.name,
+      employeeEmail: leaveReq.employee.email,
+      leaveType: leaveReq.leaveType.name,
+      actionTaken: "REJECTED",
+      approverName: req.user.name,
+      approverRole: req.user.role,
+      timestamp: new Date().toISOString(),
+      reason: comment,
+    });
+
     // Fetch updated employee data for response
     const updatedEmployee = await User.findById(leaveReq.employee._id).select("leaveBalances");
 
@@ -391,11 +520,11 @@ exports.rejectLeave = async (req, res, next) => {
       .populate("employee", "name email department designation avatar leaveBalances")
       .populate("leaveType", "name code color");
 
-    res.json({ 
+    res.json({
       success: true, 
       message: "Leave request rejected successfully.", 
       data: { 
-        leaveRequest: populatedLeaveReq,
+        leaveRequest: mapLeaveForResponse(populatedLeaveReq),
         updatedBalances: updatedEmployee.leaveBalances
       } 
     });
@@ -473,11 +602,11 @@ exports.cancelLeave = async (req, res, next) => {
       .populate("employee", "name email department designation avatar leaveBalances")
       .populate("leaveType", "name code color");
 
-    res.json({ 
+    res.json({
       success: true, 
       message: "Leave request cancelled successfully.",
       data: {
-        leaveRequest: populatedLeaveReq,
+        leaveRequest: mapLeaveForResponse(populatedLeaveReq),
         updatedBalances: updatedEmployee.leaveBalances
       }
     });
@@ -562,10 +691,10 @@ exports.forceCancelLeave = async (req, res, next) => {
       severity: "HIGH",
     });
 
-    res.json({ 
+    res.json({
       success: true, 
       message: "Leave request cancelled successfully.",
-      data: { leaveRequest: leaveReq }
+      data: { leaveRequest: mapLeaveForResponse(leaveReq) }
     });
   } catch (err) { 
     await session.abortTransaction();
@@ -618,7 +747,7 @@ exports.getLeaveById = async (req, res, next) => {
       return next(new AppError("You can only view your own leave requests.", 403));
     }
     
-    res.json({ success: true, data: { leave } });
+    res.json({ success: true, data: { leave: mapLeaveForResponse(leave) } });
   } catch (err) { next(err); }
 };
 
@@ -628,10 +757,20 @@ exports.getLeaveById = async (req, res, next) => {
 exports.downloadAttachment = async (req, res, next) => {
   try {
     const { userId, fileName } = req.params;
-    const leave = await LeaveRequest.findOne({
+    const safeFileName = sanitizeFileName(fileName);
+    if (safeFileName !== fileName) {
+      return next(new AppError("Invalid attachment name.", 400));
+    }
+
+    const candidates = await LeaveRequest.find({
       employee: userId,
-      "attachment.storagePath": { $regex: `${fileName}$` },
+      "attachment.storagePath": { $exists: true, $ne: null },
     }).populate("employee", "_id managerId");
+
+    const leave = candidates.find((item) => {
+      const storagePath = item?.attachment?.storagePath || "";
+      return path.basename(storagePath) === safeFileName;
+    });
 
     if (!leave || !leave.attachment?.storagePath) {
       return next(new AppError("Attachment not found.", 404));
@@ -728,9 +867,13 @@ exports.getMyBalance = async (req, res, next) => {
         if (code === "EL") acc.earned_leave = bal.balance;
         if (code === "SL") acc.sick_leave = bal.balance;
         if (code === "CL") acc.casual_leave = bal.balance;
+        acc.used += Number(bal.used || 0);
+        acc.pending += Number(bal.pending || 0);
+        acc.total += Number(bal.total ?? (Number(bal.balance || 0) + Number(bal.used || 0)));
+        acc.remaining += Number(bal.balance || 0);
         return acc;
       },
-      { earned_leave: 0, sick_leave: 0, casual_leave: 0 }
+      { earned_leave: 0, sick_leave: 0, casual_leave: 0, used: 0, pending: 0, total: 0, remaining: 0 }
     );
     const lastCredit = await LeaveCreditLog.findOne({ userId: req.user._id }).sort({ month: -1, createdAt: -1 });
     const now = new Date();

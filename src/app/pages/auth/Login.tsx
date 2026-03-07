@@ -13,21 +13,23 @@ export default function Login() {
   const [error, setError] = useState("");
 
   const quickFill = (role: string) => {
-    const map: Record<string, string> = {
-      employee: "alice@company.com",
-      manager: "johnmanager@gmail.com",
-      admin: "hradmin@gmail.com",
+    const map: Record<string, { email: string; password: string }> = {
+      employee: { email: "alice@company.com", password: "password123" },
+      manager: { email: "johnmanager@gmail.com", password: "admin123" },
+      admin: { email: "Subramanya@aksharaenterprises.info", password: "admin123" },
     };
-    setForm({ email: map[role], password: "password123" });
+    setForm(map[role]);
     setError("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.email || !form.password) { setError("Please fill in all fields."); return; }
+    const email = form.email.trim().toLowerCase();
+    const password = form.password;
+    if (!email || !password) { setError("Please fill in all fields."); return; }
     setLoading(true);
     setError("");
-    const result = await login(form.email, form.password);
+    const result = await login(email, password);
     setLoading(false);
     if (result.success) {
       const stored = localStorage.getItem("user");

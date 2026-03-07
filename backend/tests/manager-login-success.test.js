@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+process.env.JWT_SECRET = process.env.JWT_SECRET || "0123456789abcdef0123456789abcdef";
+
 const User = require("../models/User");
 const AuditTrail = require("../models/AuditTrail");
 const authController = require("../controllers/authController");
@@ -15,6 +17,11 @@ test("valid manager credentials -> login success with manager payload", async ()
     email: "manager@example.com",
     role: "MANAGER",
     isActive: true,
+    failedLoginAttempts: 0,
+    lockUntil: null,
+    isAccountLocked: () => false,
+    resetLoginAttempts: async () => {},
+    registerFailedLogin: async () => {},
     comparePassword: async (password) => password === "password123",
     save: async () => {},
     toObject() {
@@ -31,6 +38,9 @@ test("valid manager credentials -> login success with manager payload", async ()
   const res = {
     statusCode: 0,
     body: null,
+    cookie() {
+      return this;
+    },
     status(code) {
       this.statusCode = code;
       return this;
@@ -52,7 +62,7 @@ test("valid manager credentials -> login success with manager payload", async ()
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.success, true);
   assert.equal(res.body.data.user.role, "manager");
-  assert.ok(res.body.token);
+  assert.equal(res.body.token, undefined);
 
   User.findOne = originalFindOne;
   AuditTrail.log = originalAudit;

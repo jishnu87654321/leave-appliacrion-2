@@ -1,0 +1,47 @@
+const logger = require("../utils/logger");
+const { redactPII } = require("../config/security");
+
+const SECURITY_EVENTS = {
+  AUTH_LOGIN_FAILED: "AUTH_LOGIN_FAILED",
+  AUTH_LOGIN_SUCCESS: "AUTH_LOGIN_SUCCESS",
+  AUTH_ACCOUNT_LOCKED: "AUTH_ACCOUNT_LOCKED",
+  AUTH_TOKEN_INVALID: "AUTH_TOKEN_INVALID",
+  AUTH_TOKEN_EXPIRED: "AUTH_TOKEN_EXPIRED",
+  AUTH_PASSWORD_CHANGED: "AUTH_PASSWORD_CHANGED",
+  AUTH_PASSWORD_RESET_REQUESTED: "AUTH_PASSWORD_RESET_REQUESTED",
+  ACCESS_DENIED: "ACCESS_DENIED",
+  ACCESS_IDOR_BLOCKED: "ACCESS_IDOR_BLOCKED",
+  INPUT_INJECTION_BLOCKED: "INPUT_INJECTION_BLOCKED",
+  FILE_UPLOAD_REJECTED: "FILE_UPLOAD_REJECTED",
+  FILE_UPLOAD_ACCEPTED: "FILE_UPLOAD_ACCEPTED",
+  RATE_LIMIT_TRIGGERED: "RATE_LIMIT_TRIGGERED",
+  CORS_BLOCKED: "CORS_BLOCKED",
+  SECURITY_HEADER_VIOLATION: "SECURITY_HEADER_VIOLATION",
+  SSRF_BLOCKED: "SSRF_BLOCKED",
+  AUDIT_CHAIN_MISMATCH: "AUDIT_CHAIN_MISMATCH",
+  PRIVILEGE_ESCALATION_BLOCKED: "PRIVILEGE_ESCALATION_BLOCKED",
+  CONFIG_WEAK_SECRET_BLOCKED: "CONFIG_WEAK_SECRET_BLOCKED",
+  REQUEST_REPLAY_BLOCKED: "REQUEST_REPLAY_BLOCKED",
+};
+
+const logSecurityEvent = (eventType, metadata = {}) => {
+  if (!SECURITY_EVENTS[eventType]) return;
+
+  const scrubbed = {};
+  Object.entries(metadata || {}).forEach(([key, value]) => {
+    if (typeof value === "string") scrubbed[key] = redactPII(value);
+    else scrubbed[key] = value;
+  });
+
+  logger.warn("security_event", {
+    eventType,
+    timestamp: new Date().toISOString(),
+    ...scrubbed,
+  });
+};
+
+module.exports = {
+  SECURITY_EVENTS,
+  logSecurityEvent,
+};
+

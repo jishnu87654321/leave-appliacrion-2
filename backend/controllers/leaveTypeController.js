@@ -15,6 +15,7 @@ const CORE_POLICIES = {
     yearlyTotal: POLICY.LEAVE_TYPES.EARNED.annualEntitlement,
     carryForwardLimit: POLICY.LEAVE_TYPES.EARNED.carryForwardLimit,
     maxConsecutiveDays: POLICY.LEAVE_TYPES.EARNED.maxConsecutiveDays,
+    applicableDuringProbation: true,
     isActive: true,
   },
   SL: {
@@ -60,7 +61,6 @@ async function ensureCoreLeaveTypes() {
     await LeaveType.create({
       ...CORE_POLICIES.EL,
       allowNegativeBalance: false,
-      applicableDuringProbation: false,
       requiresDocument: false,
     });
   } else {
@@ -215,6 +215,7 @@ exports.updateLeaveType = async (req, res, next) => {
       leaveType.yearlyTotal = 15;
       leaveType.carryForwardLimit = 30;
       leaveType.maxConsecutiveDays = 30;
+      leaveType.applicableDuringProbation = true;
       leaveType.isActive = true;
     } else if (leaveType.code === "SL") {
       leaveType.name = "Sick Leave";

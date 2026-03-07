@@ -151,6 +151,8 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
         yearlyTotal: Number(lt.yearlyTotal ?? lt.accrualPerYear ?? 0),
         carryForwardLimit: Number(lt.carryForwardLimit ?? 0),
         maxConsecutiveDays: Number(lt.maxConsecutiveDays ?? lt.maxConsecutive ?? 30),
+        allowNegativeBalance: lt.allowNegativeBalance !== undefined ? Boolean(lt.allowNegativeBalance) : false,
+        applicableDuringProbation: lt.applicableDuringProbation !== undefined ? Boolean(lt.applicableDuringProbation) : true,
         isActive: lt.isActive !== undefined ? Boolean(lt.isActive) : lt.active !== undefined ? Boolean(lt.active) : true,
       }));
       setLeaveTypes(transformedTypes);

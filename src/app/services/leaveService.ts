@@ -19,7 +19,13 @@ export interface LeaveApplication {
 export const leaveService = {
   // Apply for leave
   applyLeave: async (data: LeaveApplication) => {
-    const response = await api.post('/leaves/apply', data);
+    const idempotencyKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const response = await api.post('/leaves/apply', data, {
+      headers: { 'x-idempotency-key': idempotencyKey },
+    });
     return response.data;
   },
 

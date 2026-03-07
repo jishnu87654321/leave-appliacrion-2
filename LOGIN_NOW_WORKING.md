@@ -9,7 +9,7 @@ Your authentication is **fully functional**. You can now login to the applicatio
 ## 🔐 Login Credentials
 
 ```
-Email:    hradmin@gmail.com
+Email:    Subramanya@aksharaenterprises.info
 Password: admin123
 ```
 
@@ -30,7 +30,7 @@ npm run dev
 
 ### 3. Login
 1. Open http://localhost:5173
-2. Enter email: `hradmin@gmail.com`
+2. Enter email: `Subramanya@aksharaenterprises.info`
 3. Enter password: `admin123`
 4. Click "Sign In"
 5. ✅ You'll be redirected to the HR Dashboard!
@@ -71,7 +71,7 @@ Expected output:
 ✅ Login Successful!
 Token: eyJhbGciOiJIUzI1NiIsInR5cCI6Ik...
 Name: HR Admin
-Email: hradmin@gmail.com
+Email: Subramanya@aksharaenterprises.info
 Role: HR_ADMIN
 ```
 
@@ -116,6 +116,6 @@ Role: HR_ADMIN
 
 **Everything is working! Go ahead and login! 🚀**
 
-**Email:** hradmin@gmail.com  
+**Email:** Subramanya@aksharaenterprises.info  
 **Password:** admin123  
 **URL:** http://localhost:5173

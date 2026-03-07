@@ -7,6 +7,7 @@ const Notification = require("../models/Notification");
 const { AppError } = require("../middleware/errorHandler");
 const { deductLeaveBalance, releasePending } = require("../services/leaveBalanceService");
 const { notifyLeaveEvent } = require("../services/notificationService");
+const { queueAdminEventNotification } = require("../services/notificationMailer");
 const { canonicalRole } = require("../utils/roles");
 
 /**
@@ -256,6 +257,17 @@ exports.hrOverrideLeave = async (req, res, next) => {
         comment: `[HR OVERRIDE] ${comment.trim()}`,
       });
     }
+
+    queueAdminEventNotification("HR_OVERRIDE_ACTION", {
+      employeeName: employee.name,
+      employeeEmail: employee.email,
+      leaveType: leaveType.name,
+      originalStatus: previousStatus,
+      newStatus: status,
+      hrName: req.user.name,
+      reason: comment.trim(),
+      timestamp: new Date().toISOString(),
+    });
 
     // Fetch updated employee balances
     const updatedEmployee = await User.findById(employee._id)

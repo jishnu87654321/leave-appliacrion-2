@@ -17,9 +17,8 @@ export interface RegisterData {
 export const authService = {
   login: async (credentials: LoginCredentials) => {
     const response = await api.post('/auth/login', credentials);
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.data.user));
+    if (response.data?.data?.user) {
+      sessionStorage.setItem('user', JSON.stringify(response.data.data.user));
     }
     return response.data;
   },
@@ -33,14 +32,13 @@ export const authService = {
     try {
       await api.post('/auth/logout');
     } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      sessionStorage.removeItem('user');
     }
   },
 
   getCurrentUser: async () => {
     const response = await api.get('/auth/me');
-    localStorage.setItem('user', JSON.stringify(response.data.data.user));
+    sessionStorage.setItem('user', JSON.stringify(response.data.data.user));
     return response.data.data.user;
   },
 

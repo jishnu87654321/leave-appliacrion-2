@@ -200,6 +200,8 @@ export default function UserManagement() {
     
     setIsSaving(true);
     try {
+      const toId = (value: any) => String(value?._id || value || "");
+
       // Update user basic info
       const updateData = {
         name: formData.name,
@@ -217,29 +219,37 @@ export default function UserManagement() {
       // Update leave balances if changed
       const originalBalances = editingUser.leaveBalances || [];
       const newBalances = formData.leaveBalances || [];
-      
+
+      const changedBalances: Array<{ leaveTypeId: string; newBalance: number; oldBalance: number }> = [];
+
       for (const leaveType of leaveTypes) {
-        const ltId = leaveType._id || leaveType.id || '';
-        if (!ltId) continue; // Skip if no valid ID
-        
-        const originalBal = originalBalances.find((b: any) => (b.leaveTypeId?._id || b.leaveTypeId) === ltId);
-        const newBal = newBalances.find((b: any) => (b.leaveTypeId?._id || b.leaveTypeId) === ltId);
-        
-        const originalBalance = originalBal?.balance || 0;
-        const newBalance = newBal?.balance || 0;
-        
-        if (originalBalance !== newBalance) {
-          if (!balanceReason.trim()) {
-            toast.error("Please provide a reason for balance adjustment");
-            setIsSaving(false);
-            return;
-          }
-          
+        const ltId = toId(leaveType._id || leaveType.id);
+        if (!ltId) continue;
+
+        const originalBal = originalBalances.find((b: any) => toId(b.leaveTypeId) === ltId);
+        const newBal = newBalances.find((b: any) => toId(b.leaveTypeId) === ltId);
+
+        const originalBalance = Number(originalBal?.balance ?? 0);
+        const updatedBalance = Number(newBal?.balance ?? 0);
+        const roundedOld = Math.round(originalBalance * 100) / 100;
+        const roundedNew = Math.round(updatedBalance * 100) / 100;
+
+        if (roundedOld !== roundedNew) {
+          changedBalances.push({ leaveTypeId: ltId, newBalance: roundedNew, oldBalance: roundedOld });
+        }
+      }
+
+      if (changedBalances.length > 0) {
+        const reasonToUse =
+          balanceReason.trim() ||
+          `Manual balance update by HR on ${new Date().toISOString().slice(0, 10)}`;
+
+        for (const change of changedBalances) {
           await userService.updateLeaveBalance(
             editingUser._id || editingUser.id || '',
-            ltId,
-            newBalance,
-            balanceReason
+            change.leaveTypeId,
+            change.newBalance,
+            reasonToUse
           );
         }
       }
@@ -251,6 +261,8 @@ export default function UserManagement() {
       
       // Refresh user list
       await fetchUsers();
+      window.dispatchEvent(new CustomEvent('refreshBalances'));
+      window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
     } catch (error: any) {
       console.error("Error updating user:", error);
       toast.error(error.response?.data?.message || "Failed to update user");

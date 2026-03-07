@@ -6,6 +6,7 @@ const {
   getCalendar,
   upsertCalendar,
   runMonthlyAccrual,
+  testAdminEmail,
   createDepartmentChangeRequest,
   getDepartmentChangeRequests,
   confirmDepartmentChange,
@@ -18,6 +19,7 @@ router.get("/calendar", restrictTo("HR_ADMIN", "MANAGER"), getCalendar);
 router.post("/calendar", restrictTo("HR_ADMIN", "MANAGER"), upsertCalendar);
 router.post("/run-monthly-accrual", restrictTo("HR_ADMIN"), runMonthlyAccrual);
 router.post("/run-monthly-credit", restrictTo("HR_ADMIN"), runMonthlyAccrual);
+router.post("/test-email", restrictTo("HR_ADMIN"), testAdminEmail);
 
 router.get("/department-change-requests", restrictTo("HR_ADMIN", "MANAGER"), getDepartmentChangeRequests);
 router.post("/department-change-requests", restrictTo("HR_ADMIN", "MANAGER"), createDepartmentChangeRequest);

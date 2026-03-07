@@ -13,10 +13,13 @@
     "migrate:intern-role": "node scripts/migrateEmployeesToIntern.cjs",
     "db:init": "node scripts/initDatabase.js",
     "db:check": "node scripts/initDatabase.js",
-    "test": "node --test --test-isolation=none tests/*.test.js"
+    "test": "node --test --test-isolation=none tests/*.test.js",
+    "security:audit": "npm audit --audit-level=high",
+    "security:licenses": "npx --yes license-checker --production --summary"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -27,7 +30,7 @@
     "mongoose": "^8.4.1",
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.13",
+    "nodemailer": "8.0.1",
     "winston": "^3.13.0"
   },
   "devDependencies": {

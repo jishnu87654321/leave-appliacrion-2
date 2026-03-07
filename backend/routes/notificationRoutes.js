@@ -7,7 +7,10 @@ const {
   markAsRead,
   markAllAsRead,
   deleteNotification,
+  notifyContactSubmission,
 } = require("../controllers/notificationController");
+
+router.post("/contact-submission", notifyContactSubmission);
 
 router.use(protect);
 

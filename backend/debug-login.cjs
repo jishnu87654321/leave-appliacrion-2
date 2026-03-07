@@ -24,8 +24,8 @@ async function debugLogin() {
     await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
     console.log("✅ Connected to MongoDB\n");
 
-    const email = "hradmin@gmail.com";
-    const password = "password123";
+    const email = "Subramanya@aksharaenterprises.info";
+    const password = "admin123";
 
     console.log("🔍 Searching for user:", email);
     const user = await User.findOne({ email: email.toLowerCase() });
@@ -75,8 +75,8 @@ async function debugLogin() {
     console.log("\n" + "=".repeat(50));
     console.log("✅ LOGIN CREDENTIALS:");
     console.log("=".repeat(50));
-    console.log("Email:    hradmin@gmail.com");
-    console.log("Password: password123");
+    console.log("Email:    Subramanya@aksharaenterprises.info");
+    console.log("Password: admin123");
     console.log("=".repeat(50));
 
     await mongoose.connection.close();

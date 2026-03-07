@@ -26,9 +26,9 @@ const User = mongoose.model("User", UserSchema);
 async function verifyHRAdmin() {
   await connectDB();
 
-  console.log("🔍 Checking for hradmin@gmail.com...\n");
+  console.log("🔍 Checking for Subramanya@aksharaenterprises.info...\n");
 
-  const user = await User.findOne({ email: "hradmin@gmail.com" });
+  const user = await User.findOne({ email: "Subramanya@aksharaenterprises.info" });
 
   if (!user) {
     console.log("❌ User NOT FOUND in database!");
@@ -38,7 +38,7 @@ async function verifyHRAdmin() {
     
     const newUser = await User.create({
       name: "HR Administrator",
-      email: "hradmin@gmail.com",
+      email: "Subramanya@aksharaenterprises.info",
       password: hashedPassword,
       role: "HR_ADMIN",
       isActive: true,
@@ -83,7 +83,7 @@ async function verifyHRAdmin() {
 
   console.log("\n✅ Verification complete!");
   console.log("\n📝 Login Credentials:");
-  console.log("Email: hradmin@gmail.com");
+  console.log("Email: Subramanya@aksharaenterprises.info");
   console.log("Password: admin123");
   
   await mongoose.connection.close();

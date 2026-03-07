@@ -62,7 +62,7 @@ async function seedDatabase(dbName) {
     const hrAdminPassword = await bcrypt.hash("admin123", 10);
     const hrAdmin = await mongoose.connection.db.collection("users").insertOne({
       name: "HR Administrator",
-      email: "hradmin@gmail.com",
+      email: "Subramanya@aksharaenterprises.info",
       password: hrAdminPassword,
       role: "HR_ADMIN",
       department: "Human Resources",
@@ -79,7 +79,7 @@ async function seedDatabase(dbName) {
       updatedAt: new Date(),
     });
 
-    console.log("   ✓ Created HR Admin (hradmin@gmail.com)");
+    console.log("   ✓ Created HR Admin (Subramanya@aksharaenterprises.info)");
 
     // Create John Manager
     const johnPassword = await bcrypt.hash("admin123", 10);
@@ -225,7 +225,7 @@ async function seedBothDatabases() {
 
   console.log("\n🔐 Login Credentials (same for both databases):");
   console.log("\n   HR Admin:");
-  console.log("   Email: hradmin@gmail.com");
+  console.log("   Email: Subramanya@aksharaenterprises.info");
   console.log("   Password: admin123");
   console.log("   Role: HR_ADMIN");
 

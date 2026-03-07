@@ -30,8 +30,11 @@ export const router = createBrowserRouter([
   { path: "/employee/apply-leave", Component: ApplyLeave },
   { path: "/intern/apply-leave", Component: ApplyLeave },
   { path: "/employee/leave-balance", Component: LeaveBalance },
+  { path: "/intern/leave-balance", Component: LeaveBalance },
   { path: "/employee/leave-history", Component: LeaveHistory },
+  { path: "/intern/leave-history", Component: LeaveHistory },
   { path: "/employee/team-calendar", Component: TeamCalendar },
+  { path: "/intern/team-calendar", Component: TeamCalendar },
   { path: "/employee/calendar/leaves/:date", Component: CalendarLeavesByDate },
   { path: "/intern/calendar/leaves/:date", Component: CalendarLeavesByDate },
 

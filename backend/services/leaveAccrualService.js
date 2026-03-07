@@ -84,10 +84,26 @@ async function processMonthlyAccrual({ runDate = new Date(), source = "MONTHLY_J
 
   const [users, leaveTypes] = await Promise.all([
     User.find({ isActive: true }),
-    LeaveType.find({ isActive: true, code: { $in: ["EL", "SL"] } }),
+    LeaveType.find({ isActive: true }),
   ]);
 
-  const leaveTypeMap = new Map(leaveTypes.map((lt) => [lt.code, lt]));
+  const leaveTypeMap = new Map();
+  for (const lt of leaveTypes) {
+    const code = String(lt.code || "").trim().toUpperCase();
+    if (code === "EL" || code === "SL") {
+      leaveTypeMap.set(code, lt);
+    }
+  }
+
+  // Backward-compatible fallback for legacy data where code casing/values drifted.
+  if (!leaveTypeMap.get("EL")) {
+    const earned = leaveTypes.find((lt) => /earned/i.test(String(lt.name || "")));
+    if (earned) leaveTypeMap.set("EL", earned);
+  }
+  if (!leaveTypeMap.get("SL")) {
+    const sick = leaveTypes.find((lt) => /sick/i.test(String(lt.name || "")));
+    if (sick) leaveTypeMap.set("SL", sick);
+  }
   let creditedEntries = 0;
   let creditedUsers = 0;
   let skippedMissingJoinDate = 0;

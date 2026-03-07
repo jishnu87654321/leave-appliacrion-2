@@ -43,7 +43,7 @@ export const DashboardLayout = ({ children, title, subtitle, allowedRoles }: Das
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header title={title} subtitle={subtitle} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             {children}
           </div>

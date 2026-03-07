@@ -63,7 +63,9 @@ export const userService = {
 
   // Get user's leave balances
   getUserBalances: async (userId: string) => {
-    const response = await api.get(`/users/${userId}/balances`);
+    const response = await api.get(`/users/${userId}/balances`, {
+      params: { _ts: Date.now() },
+    });
     return response.data;
   },
 };

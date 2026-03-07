@@ -4,11 +4,16 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const cron = require("node-cron");
+const cookieParser = require("cookie-parser");
 const mongoose = require("mongoose");
+const path = require("path");
 const connectDB = require("./config/db");
 const { globalErrorHandler } = require("./middleware/errorHandler");
 const { apiLimiter } = require("./middleware/rateLimiter");
 const { slowRequestLogger } = require("./utils/performance");
+const { getRequiredJwtSecret, getAllowedOrigins } = require("./config/security");
+const { mongoSanitize, enforceJsonBodySize } = require("./middleware/requestSecurity");
+const { logSecurityEvent, SECURITY_EVENTS } = require("./services/securityEventService");
 
 const authRoutes = require("./routes/authRoutes");
 const leaveRoutes = require("./routes/leaveRoutes");
@@ -19,40 +24,73 @@ const reportRoutes = require("./routes/reportRoutes");
 const managerRoutes = require("./routes/managerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const calendarRoutes = require("./routes/calendarRoutes");
+const holidayRoutes = require("./routes/holiday.routes");
+const { getDiagnostics: getEmailDiagnostics, verifyTransporter } = require("./services/notificationMailer");
 
 const { creditMonthlyLeaves } = require("./services/monthlyCredit");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Fail fast on weak crypto config.
+getRequiredJwtSecret();
+
 connectDB();
 
+app.disable("x-powered-by");
 app.use(
   helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: true,
+    referrerPolicy: { policy: "no-referrer" },
   })
 );
 
+const allowedOrigins = getAllowedOrigins();
+const effectiveAllowedOrigins =
+  allowedOrigins.length > 0
+    ? allowedOrigins
+    : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    origin: (origin, callback) => {
+      // Non-browser clients may have no origin. Keep that path open.
+      if (!origin) return callback(null, true);
+      if (effectiveAllowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      logSecurityEvent("CORS_BLOCKED", { origin });
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cookieParser());
+app.use(enforceJsonBodySize(1024 * 1024));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(mongoSanitize);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
 app.use("/api/", apiLimiter);
-app.use((req, res, next) => {
-  res.setHeader("X-Powered-By", "Leave Management System");
-  next();
-});
 app.use(slowRequestLogger(2000));
 
 app.get("/health", (req, res) => {
@@ -69,6 +107,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/managers", managerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/calendar", calendarRoutes);
+app.use("/api/holidays", holidayRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
@@ -104,6 +143,24 @@ function registerCronJobs() {
 
 function startServer(port = PORT) {
   registerCronJobs();
+
+  const emailDiag = getEmailDiagnostics();
+  console.log("[email] notificationsEnabled:", emailDiag.enabled);
+  console.log("[email] smtp:", `${emailDiag.smtpHost}:${emailDiag.smtpPort}`);
+  console.log("[email] smtpUser:", emailDiag.smtpUser || "(empty)");
+  console.log("[email] smtpPass:", emailDiag.smtpPassMasked);
+  console.log("[email] smtpFrom:", emailDiag.smtpFrom || "(empty)");
+  console.log("[email] adminRecipients:", emailDiag.adminRecipients.length ? emailDiag.adminRecipients.join(", ") : "(none)");
+
+  verifyTransporter().then((result) => {
+    if (result?.success) {
+      console.log("SMTP ready for sending emails");
+    } else if (result?.skipped) {
+      console.log(`[email] transporter verification skipped: ${result.reason || "test mode"}`);
+    } else {
+      console.log(`[email] transporter verification failed: ${result?.error || "unknown error"}`);
+    }
+  });
 
   const server = app.listen(port, () => {
     if (process.env.NODE_ENV !== "production") {
@@ -145,6 +202,7 @@ function startServer(port = PORT) {
     if (process.env.NODE_ENV !== "production") {
       console.error("Uncaught Exception:", err);
     }
+    logSecurityEvent(SECURITY_EVENTS.SECURITY_HEADER_VIOLATION, { source: "uncaughtException" });
     gracefulShutdown("UNCAUGHT_EXCEPTION");
   });
   process.on("unhandledRejection", (err) => {

@@ -11,7 +11,7 @@ const leaveBalanceSchema = new mongoose.Schema({
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: [true, "Name is required"], trim: true, minlength: 2, maxlength: 100 },
-  email: { type: String, required: [true, "Email is required"], trim: true, lowercase: true, match: [/^\S+@\S+\.\S+$/, "Invalid email format"] },
+  email: { type: String, required: [true, "Email is required"], trim: true, lowercase: true, match: [/^[^\s@]+@[^\s@]+$/, "Invalid email format"] },
   password: { type: String, required: [true, "Password is required"], minlength: 6, select: false },
   role: {
     type: String,
@@ -45,6 +45,8 @@ const userSchema = new mongoose.Schema({
   passwordChangedAt: { type: Date, default: null },
   resetPasswordToken: { type: String, select: false },
   resetPasswordExpires: { type: Date, select: false },
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date, default: null },
 }, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
 
 // Indexes
@@ -78,6 +80,26 @@ userSchema.pre("save", async function (next) {
 // Method: compare passwords
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+userSchema.methods.isAccountLocked = function () {
+  return Boolean(this.lockUntil && this.lockUntil.getTime() > Date.now());
+};
+
+userSchema.methods.registerFailedLogin = async function () {
+  this.failedLoginAttempts = (this.failedLoginAttempts || 0) + 1;
+  if (this.failedLoginAttempts >= 5) {
+    this.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+  }
+  await this.save({ validateBeforeSave: false });
+};
+
+userSchema.methods.resetLoginAttempts = async function () {
+  if (this.failedLoginAttempts || this.lockUntil) {
+    this.failedLoginAttempts = 0;
+    this.lockUntil = null;
+    await this.save({ validateBeforeSave: false });
+  }
 };
 
 // Method: get leave balance for a type

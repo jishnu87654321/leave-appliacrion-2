@@ -50,7 +50,7 @@ const createAdmin = async () => {
     const User = mongoose.models.User || mongoose.model("User", userSchema);
 
     // Check if admin already exists
-    const existingAdmin = await User.findOne({ email: "hradmin@gmail.com" });
+    const existingAdmin = await User.findOne({ email: "Subramanya@aksharaenterprises.info" });
     
     if (existingAdmin) {
       console.log("⚠️  Admin user already exists!");
@@ -70,7 +70,7 @@ const createAdmin = async () => {
       
       console.log("✅ Admin password reset to: password123");
       console.log("\n🎉 You can now login with:");
-      console.log("   Email: hradmin@gmail.com");
+      console.log("   Email: Subramanya@aksharaenterprises.info");
       console.log("   Password: password123\n");
       process.exit(0);
     }
@@ -82,7 +82,7 @@ const createAdmin = async () => {
     // Create admin user
     const admin = await User.create({
       name: "HR Administrator",
-      email: "hradmin@gmail.com",
+      email: "Subramanya@aksharaenterprises.info",
       password: hashedPassword,
       role: "HR_ADMIN",
       department: "Human Resources",

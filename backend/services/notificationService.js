@@ -34,7 +34,14 @@ async function sendEmailWithFallback({
   });
 
   try {
-    await sendEmail({ to: recipientEmail, subject, html });
+    const result = await sendEmail({ to: recipientEmail, subject, html });
+    if (!result?.success) {
+      logEntry.status = "FAILED";
+      logEntry.error = result?.error || result?.reason || "Unknown email error";
+      await logEntry.save();
+      logger.error(`Email failed for ${recipientEmail}: ${logEntry.error}`);
+      return { success: false, error: logEntry.error };
+    }
     logEntry.status = "SENT";
     await logEntry.save();
     return { success: true };
@@ -42,7 +49,7 @@ async function sendEmailWithFallback({
     logEntry.status = "FAILED";
     logEntry.error = error.message || "Unknown email error";
     await logEntry.save();
-    logger.error(`Email failed for ${recipientEmail}: ${error.message}`);
+    logger.error(`Email failed for ${recipientEmail}: ${error?.message || "Unknown email error"}`);
     return { success: false, error: error.message };
   }
 }

@@ -87,19 +87,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const initAuth = async () => {
-      const token = localStorage.getItem("token");
-      const storedUser = localStorage.getItem("user");
-      
-      if (token && storedUser) {
-        try {
-          const user = JSON.parse(storedUser);
-          setCurrentUser(user);
-          await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
-        } catch (error) {
-          console.error("Auth init error:", error);
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
+      const storedUser = sessionStorage.getItem("user");
+
+      try {
+        if (storedUser) {
+          setCurrentUser(JSON.parse(storedUser));
+        } else {
+          const me = await authService.getCurrentUser();
+          setCurrentUser(me);
         }
+        await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
+      } catch (error) {
+        sessionStorage.removeItem("user");
       }
       setIsLoading(false);
     };
@@ -136,7 +135,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const fetchLeaveBalances = async () => {
-    const storedUser = localStorage.getItem("user");
+    const storedUser = sessionStorage.getItem("user");
     if (!storedUser) return;
     
     try {
@@ -168,8 +167,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
-      const response = await authService.login({ email, password });
+      const response = await authService.login({ email: String(email || "").trim().toLowerCase(), password });
       setCurrentUser(response.data.user);
+      sessionStorage.setItem("user", JSON.stringify(response.data.user));
       await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
       return { success: true, message: "Login successful!" };
     } catch (error: any) {
@@ -185,6 +185,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.error("Logout error:", error);
     } finally {
       setCurrentUser(null);
+      sessionStorage.removeItem("user");
       setNotifications([]);
       setLeaveBalances([]);
       setCreditInfo(null);

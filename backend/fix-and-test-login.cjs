@@ -26,13 +26,17 @@ async function fixAndTestLogin() {
   try {
     // Step 1: Connect to database
     console.log('\n1️⃣  Connecting to MongoDB...');
-    await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
+    let mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (mongoUri && mongoUri.endsWith('/')) {
+      mongoUri += 'leave_management';
+    }
+    await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 
     // Step 2: Ensure admin user exists and is active
     console.log('\n2️⃣  Checking admin user...');
-    const email = "hradmin@gmail.com";
-    const password = "password123";
+    const email = "Subramanya@aksharaenterprises.info";
+    const password = "admin123";
     
     let user = await User.findOne({ email: email.toLowerCase() });
     
@@ -63,7 +67,7 @@ async function fixAndTestLogin() {
       const hashedPassword = await bcrypt.hash(password, 10);
       user.password = hashedPassword;
       await user.save();
-      console.log('✅ Password reset to: password123');
+      console.log('✅ Password reset to: admin123');
     }
 
     console.log('\n   User Details:');
@@ -119,8 +123,8 @@ async function fixAndTestLogin() {
     console.log('\n' + '='.repeat(70));
     console.log('✅ SETUP COMPLETE - LOGIN CREDENTIALS:');
     console.log('='.repeat(70));
-    console.log('Email:    hradmin@gmail.com');
-    console.log('Password: password123');
+    console.log('Email:    Subramanya@aksharaenterprises.info');
+    console.log('Password: admin123');
     console.log('Frontend: http://localhost:5173');
     console.log('Backend:  http://localhost:5000');
     console.log('='.repeat(70));

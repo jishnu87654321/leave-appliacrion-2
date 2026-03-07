@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, CheckCircle, XCircle, Filter, Eye, Download, ShieldCheck, Plus, Settings } from "lucide-react";
+import { Search, CheckCircle, XCircle, Filter, Eye, Download, ShieldCheck, Settings, FileText } from "lucide-react";
 import { Link } from "react-router";
 import { DashboardLayout } from "../../layouts/DashboardLayout";
 import { LeaveStatusBadge } from "../../components/LeaveStatusBadge";
@@ -22,6 +22,31 @@ export default function AllRequests() {
   const [rejectComment, setRejectComment] = useState("");
   const [rejectModal, setRejectModal] = useState<any | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const apiBase = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
+  const backendBase = apiBase.replace(/\/api\/?$/, "");
+
+  const getDocumentMeta = (leave: any) => {
+    if (leave?.document?.url) {
+      return {
+        url: leave.document.url as string,
+        name: leave.document.originalName || "Document",
+      };
+    }
+    if (leave?.attachmentUrl) {
+      return {
+        url: leave.attachmentUrl as string,
+        name: leave?.attachment?.fileName || "Document",
+      };
+    }
+    return null;
+  };
+
+  const toAbsoluteDocumentUrl = (url?: string) => {
+    if (!url) return "";
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (url.startsWith("/")) return `${backendBase}${url}`;
+    return `${backendBase}/${url}`;
+  };
 
   // Ensure data is loaded when component mounts
   React.useEffect(() => {
@@ -260,7 +285,7 @@ export default function AllRequests() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  {["Employee", "Leave Type", "Duration", "Days", "Status", "Applied", "Actions"].map(h => (
+                  {["Employee", "Leave Type", "Duration", "Days", "Status", "Applied", "Document", "Actions"].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -286,6 +311,24 @@ export default function AllRequests() {
                     <td className="px-4 py-3 text-sm font-bold text-gray-900">{r.totalDays || 0}{r.halfDay ? " (½)" : ""}</td>
                     <td className="px-4 py-3"><LeaveStatusBadge status={r.status} size="sm" /></td>
                     <td className="px-4 py-3 text-xs text-gray-500">{formatDate(r.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const doc = getDocumentMeta(r);
+                        if (!doc?.url) return <span className="text-xs text-gray-400">No document</span>;
+                        return (
+                          <a
+                            href={toAbsoluteDocumentUrl(doc.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={doc.name}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            View / Download
+                          </a>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3">
                       {(() => {
                         const rowRole = String(r.employee?.role || "").toUpperCase();
@@ -343,6 +386,24 @@ export default function AllRequests() {
               <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Reason</p>
               <p className="text-sm text-gray-700 bg-gray-50 rounded-xl p-3">{selectedRequest.reason || 'No reason provided'}</p>
             </div>
+            {(() => {
+              const doc = getDocumentMeta(selectedRequest);
+              if (!doc?.url) return null;
+              return (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Supporting Document</p>
+                  <a
+                    href={toAbsoluteDocumentUrl(doc.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:text-blue-900"
+                  >
+                    <FileText className="w-4 h-4" />
+                    View / Download {doc.name ? `(${doc.name})` : "Document"}
+                  </a>
+                </div>
+              );
+            })()}
             {selectedRequest.comments && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Rejection Comments</p>

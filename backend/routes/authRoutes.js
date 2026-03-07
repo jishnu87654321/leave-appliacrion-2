@@ -4,17 +4,28 @@ const router = express.Router();
 const { register, login, getMe, updatePassword, forgotPassword, logout } = require("../controllers/authController");
 const { protect } = require("../middleware/auth");
 const { authLimiter } = require("../middleware/rateLimiter");
+const emailValidator = body("email").custom((value) => /^[^\s@]+@[^\s@]+$/.test(String(value || "").trim())).withMessage("Valid email is required");
 
 // Public
 router.post("/register", [
   body("name").trim().notEmpty().withMessage("Name is required").isLength({ min: 2 }).withMessage("Name must be at least 2 characters"),
-  body("email").isEmail().withMessage("Valid email is required"),
-  body("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
+  emailValidator,
+  body("password")
+    .isLength({ min: 12 })
+    .withMessage("Password must be at least 12 characters")
+    .matches(/[A-Z]/)
+    .withMessage("Password must include an uppercase letter")
+    .matches(/[a-z]/)
+    .withMessage("Password must include a lowercase letter")
+    .matches(/[0-9]/)
+    .withMessage("Password must include a number")
+    .matches(/[^A-Za-z0-9]/)
+    .withMessage("Password must include a special character"),
   body("department").notEmpty().withMessage("Department is required"),
 ], register);
 
 router.post("/login", authLimiter, [
-  body("email").isEmail().withMessage("Valid email is required"),
+  emailValidator,
   body("password").notEmpty().withMessage("Password is required"),
 ], login);
 

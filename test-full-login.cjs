@@ -26,12 +26,12 @@ async function testFullLogin() {
 
   // Step 2: Test login
   console.log('\n2️⃣  Testing login with credentials...');
-  console.log('   Email: hradmin@gmail.com');
+  console.log('   Email: Subramanya@aksharaenterprises.info');
   console.log('   Password: password123');
   
   try {
     const response = await axios.post(`${API_URL}/auth/login`, {
-      email: 'hradmin@gmail.com',
+      email: 'Subramanya@aksharaenterprises.info',
       password: 'password123'
     }, { timeout: 5000 });
 
@@ -46,7 +46,7 @@ async function testFullLogin() {
     console.log('\n' + '='.repeat(60));
     console.log('✅ YOU CAN NOW LOGIN TO THE FRONTEND');
     console.log('='.repeat(60));
-    console.log('Email:    hradmin@gmail.com');
+    console.log('Email:    Subramanya@aksharaenterprises.info');
     console.log('Password: password123');
     console.log('URL:      http://localhost:5173');
     console.log('='.repeat(60));

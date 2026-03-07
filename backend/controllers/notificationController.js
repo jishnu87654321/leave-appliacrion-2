@@ -1,5 +1,6 @@
 const Notification = require("../models/Notification");
 const { AppError } = require("../middleware/errorHandler");
+const { sendContactFormNotification, sendContactFormUserConfirmation } = require("../services/notificationMailer");
 
 /**
  * GET /api/notifications — Get my notifications
@@ -98,5 +99,43 @@ exports.deleteNotification = async (req, res, next) => {
     res.json({ success: true, message: "Notification deleted." });
   } catch (err) {
     next(err);
+  }
+};
+
+/**
+ * POST /api/notifications/contact-submission - Send contact submission to admin email
+ */
+exports.notifyContactSubmission = async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const phone = String(req.body?.phone || "").trim();
+    const message = String(req.body?.message || "").trim();
+
+    if (!name || !email || !message) {
+      return next(new AppError("name, email and message are required.", 400));
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return next(new AppError("Valid email is required.", 400));
+    }
+
+    const result = await sendContactFormNotification({
+      name,
+      email,
+      phone,
+      message,
+      source: "Contact Form",
+      submittedAt: new Date().toISOString(),
+    });
+
+    // Best-effort confirmation email; do not fail contact submission flow.
+    await sendContactFormUserConfirmation({ email, name });
+
+    return res.status(200).json({
+      success: true,
+      message: result?.success ? "Contact submitted successfully." : "Contact submitted successfully.",
+    });
+  } catch (err) {
+    return next(err);
   }
 };

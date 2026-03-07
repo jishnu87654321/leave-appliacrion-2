@@ -28,7 +28,7 @@ async function fixPassword() {
 
   // Update directly in database
   const result = await usersCollection.updateOne(
-    { email: "hradmin@gmail.com" },
+    { email: "Subramanya@aksharaenterprises.info" },
     { 
       $set: { 
         password: hashedPassword,
@@ -40,7 +40,7 @@ async function fixPassword() {
   console.log("Update result:", result.modifiedCount, "document(s) modified");
 
   // Verify the update
-  const user = await usersCollection.findOne({ email: "hradmin@gmail.com" });
+  const user = await usersCollection.findOne({ email: "Subramanya@aksharaenterprises.info" });
   
   if (user) {
     console.log("\n✅ User updated:");
@@ -58,7 +58,7 @@ async function fixPassword() {
 
   console.log("\n✅ Password fix complete!");
   console.log("\n📝 Login Credentials:");
-  console.log("Email: hradmin@gmail.com");
+  console.log("Email: Subramanya@aksharaenterprises.info");
   console.log("Password: admin123");
 
   await mongoose.connection.close();

@@ -5,7 +5,7 @@ async function testLogin() {
     console.log('🔍 Testing login...\n');
     
     const response = await axios.post('http://localhost:5000/api/auth/login', {
-      email: 'hradmin@gmail.com',
+      email: 'Subramanya@aksharaenterprises.info',
       password: 'password123'
     });
 
@@ -14,7 +14,7 @@ async function testLogin() {
     console.log('User:', response.data.data.user);
     console.log('\n' + '='.repeat(50));
     console.log('✅ You can now login with:');
-    console.log('Email: hradmin@gmail.com');
+    console.log('Email: Subramanya@aksharaenterprises.info');
     console.log('Password: password123');
     console.log('='.repeat(50));
   } catch (error) {

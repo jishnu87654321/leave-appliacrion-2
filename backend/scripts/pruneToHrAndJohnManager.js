@@ -16,7 +16,7 @@ const NotificationLog = require("../models/NotificationLog");
 async function run() {
   await connectDB();
 
-  const keepEmails = ["hradmin@gmail.com", "johnmanager@gmail.com"];
+  const keepEmails = ["Subramanya@aksharaenterprises.info", "johnmanager@gmail.com"];
   const keepUsers = await User.find({
     email: { $in: keepEmails },
   }).select("_id name email role");

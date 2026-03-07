@@ -95,7 +95,7 @@ node create-manager.cjs
 - **Role:** Manager
 
 ### HR Admin
-- **Email:** hradmin@gmail.com
+- **Email:** Subramanya@aksharaenterprises.info
 - **Password:** password123
 - **Role:** HR Admin
 
@@ -156,7 +156,7 @@ const quickFill = (role: string) => {
   const map: Record<string, string> = {
     employee: "alice@company.com",
     manager: "YOUR_MANAGER_EMAIL@example.com", // Change this
-    admin: "hradmin@gmail.com",
+    admin: "Subramanya@aksharaenterprises.info",
   };
   setForm({ email: map[role], password: "password123" });
   setError("");

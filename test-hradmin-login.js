@@ -7,7 +7,7 @@ async function testHRAdminLogin() {
   
   try {
     const response = await axios.post(`${API_URL}/auth/login`, {
-      email: 'hradmin@gmail.com',
+      email: 'Subramanya@aksharaenterprises.info',
       password: 'admin123'
     });
     
