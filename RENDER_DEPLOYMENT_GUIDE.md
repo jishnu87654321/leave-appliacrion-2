@@ -35,8 +35,10 @@ Fill in these settings:
 - **Branch**: `dev-jishnu` (or `main` if you want)
 - **Root Directory**: `backend`
 - **Runtime**: `Node`
-- **Build Command**: `npm install`
+- **Build Command**: `npm install` (or leave empty)
 - **Start Command**: `npm start`
+
+**Note**: If Render auto-detects and tries to run `npm run build`, it will now work (we added a dummy build script).
 
 ### Instance Type
 - **Free** (select the free tier)
