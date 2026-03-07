@@ -4,6 +4,7 @@
   "description": "Production-ready Leave Management System Backend",
   "main": "server.js",
   "scripts": {
+    "build": "echo 'No build step required'",
     "start": "node start.js",
     "dev": "nodemon start.js",
     "seed": "node seeds/seedData.js",
