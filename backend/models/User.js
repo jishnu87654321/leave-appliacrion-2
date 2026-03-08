@@ -4,9 +4,9 @@ const { normalizeRoleForDb } = require("../utils/roles");
 
 const leaveBalanceSchema = new mongoose.Schema({
   leaveTypeId: { type: mongoose.Schema.Types.ObjectId, ref: "LeaveType", required: true },
-  balance: { type: Number, default: 0, min: -365 },
-  used: { type: Number, default: 0, min: 0 },
-  pending: { type: Number, default: 0, min: 0 },
+  balance: { type: Number, default: 0 },
+  used: { type: Number, default: 0 },
+  pending: { type: Number, default: 0 },
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
