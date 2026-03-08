@@ -38,9 +38,9 @@ exports.getMyNotifications = async (req, res, next) => {
  */
 exports.getUnreadCount = async (req, res, next) => {
   try {
-    const unreadCount = await Notification.countDocuments({ 
-      user: req.user._id, 
-      isRead: false 
+    const unreadCount = await Notification.countDocuments({
+      user: req.user._id,
+      isRead: false
     });
 
     res.json({
@@ -105,12 +105,14 @@ exports.deleteNotification = async (req, res, next) => {
 /**
  * POST /api/notifications/contact-submission - Send contact submission to admin email
  */
+const xss = require("xss");
+
 exports.notifyContactSubmission = async (req, res, next) => {
   try {
-    const name = String(req.body?.name || "").trim();
+    const name = xss(String(req.body?.name || "").trim());
     const email = String(req.body?.email || "").trim().toLowerCase();
-    const phone = String(req.body?.phone || "").trim();
-    const message = String(req.body?.message || "").trim();
+    const phone = xss(String(req.body?.phone || "").trim());
+    const message = xss(String(req.body?.message || "").trim());
 
     if (!name || !email || !message) {
       return next(new AppError("name, email and message are required.", 400));

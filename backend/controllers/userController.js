@@ -11,6 +11,7 @@ const { canonicalRole, normalizeRoleForDb } = require("../utils/roles");
 const { queueAdminEventNotification } = require("../services/notificationMailer");
 const { escapeRegex } = require("../config/security");
 const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
+const xss = require("xss");
 
 /**
  * POST /api/users — Create new user (HR only)
@@ -36,13 +37,13 @@ exports.createUser = async (req, res, next) => {
 
     // Create user
     const user = await User.create({
-      name: name.trim(),
+      name: xss(name.trim()),
       email: email.toLowerCase().trim(),
       password,
       role: normalizedRole,
-      department: department.trim(),
-      designation: designation?.trim() || "",
-      phone: phone?.trim() || "",
+      department: xss(department.trim()),
+      designation: designation ? xss(designation.trim()) : "",
+      phone: phone ? xss(phone.trim()) : "",
       isActive: isActive !== undefined ? isActive : true,
       probationStatus: isOnProbation,
       probationEndDate: isOnProbation ? new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000) : null,
@@ -99,10 +100,10 @@ exports.createUser = async (req, res, next) => {
       source: "HR User Creation",
     });
 
-    res.status(201).json({ 
-      success: true, 
-      message: "User created successfully.", 
-      data: { user } 
+    res.status(201).json({
+      success: true,
+      message: "User created successfully.",
+      data: { user }
     });
   } catch (err) {
     next(err);
@@ -187,24 +188,25 @@ exports.updateUser = async (req, res, next) => {
 
     const oldRole = user.role;
 
-    if (name) user.name = name.trim();
+    if (name) user.name = xss(name.trim());
     if (email) user.email = email.toLowerCase().trim();
     if (role) user.role = normalizeRoleForDb(role);
 
     // Department updates must be confirmed first via request workflow
     if (department && department.trim() !== user.department) {
+      const sanitizedNewDept = xss(department.trim());
       await DepartmentChangeRequest.create({
         userId: user._id,
         requestedBy: req.user._id,
         oldDepartment: user.department,
-        newDepartment: department.trim(),
-        reason: req.body.departmentChangeReason?.trim() || "",
+        newDepartment: sanitizedNewDept,
+        reason: req.body.departmentChangeReason ? xss(req.body.departmentChangeReason.trim()) : "",
         status: "PENDING",
         departmentConfirmed: false,
       });
     }
-    if (designation) user.designation = designation.trim();
-    if (phone) user.phone = phone.trim();
+    if (designation) user.designation = xss(designation.trim());
+    if (phone) user.phone = xss(phone.trim());
     if (probationStatus !== undefined) user.probationStatus = probationStatus;
     if (isActive !== undefined) user.isActive = isActive;
 
@@ -213,7 +215,7 @@ exports.updateUser = async (req, res, next) => {
     // Handle manager profile creation/deletion on role change
     if (role && oldRole !== role) {
       const Manager = require("../models/Manager");
-      
+
       if (
         (canonicalRole(role) === "MANAGER" || canonicalRole(role) === "HR_ADMIN") &&
         canonicalRole(oldRole) === "EMPLOYEE"
@@ -252,7 +254,10 @@ exports.updateUser = async (req, res, next) => {
       target: `${user.name} (${user.email})`,
       targetId: user._id,
       targetModel: "User",
-      metadata: { changes: req.body },
+      metadata: {
+        fieldsChanged: Object.keys(req.body).filter(k => k !== "password" && k !== "currentPassword" && k !== "newPassword"),
+        departmentChanged: department && department.trim() !== user.department
+      },
     });
 
     res.json({ success: true, message: "User updated successfully.", data: { user } });
@@ -426,7 +431,7 @@ exports.updateLeaveBalance = async (req, res, next) => {
   try {
     const { leaveTypeId, balance, reason } = req.body;
     const nextBalance = Number(balance);
-    
+
     if (!reason?.trim()) {
       return next(new AppError("Reason for balance adjustment is required.", 400));
     }
@@ -436,7 +441,7 @@ exports.updateLeaveBalance = async (req, res, next) => {
     if (!Number.isFinite(nextBalance)) {
       return next(new AppError("Balance must be a valid number.", 400));
     }
-    
+
     const user = await User.findById(req.params.id);
     if (!user) return next(new AppError("User not found.", 404));
 
@@ -453,7 +458,7 @@ exports.updateLeaveBalance = async (req, res, next) => {
 
     const balIdx = user.leaveBalances.findIndex(b => b.leaveTypeId.toString() === leaveTypeId);
     const oldBalance = balIdx >= 0 ? user.leaveBalances[balIdx].balance : 0;
-    
+
     if (balIdx >= 0) {
       user.leaveBalances[balIdx].balance = nextBalance;
     } else {
@@ -492,11 +497,11 @@ exports.updateLeaveBalance = async (req, res, next) => {
       target: `${user.name}`,
       targetId: user._id,
       targetModel: "User",
-      metadata: { 
-        leaveTypeId: leaveTypeId.toString(), 
-        oldBalance: oldBalance.toString(), 
+      metadata: {
+        leaveTypeId: leaveTypeId.toString(),
+        oldBalance: oldBalance.toString(),
         newBalance: nextBalance.toString(),
-        reason 
+        reason
       },
       severity: "HIGH",
     });
@@ -518,14 +523,14 @@ exports.updateLeaveBalance = async (req, res, next) => {
       timestamp: new Date().toISOString(),
     });
 
-    res.json({ 
-      success: true, 
-      message: "Leave balance updated successfully.", 
-      data: { 
+    res.json({
+      success: true,
+      message: "Leave balance updated successfully.",
+      data: {
         user,
         oldBalance,
         newBalance: nextBalance
-      } 
+      }
     });
   } catch (err) {
     next(err);
@@ -581,7 +586,7 @@ exports.getUserLeaveBalances = async (req, res, next) => {
 exports.processMonthlyAccrual = async (req, res, next) => {
   try {
     const { processMonthlyAccrual } = require("../services/leaveAccrualService");
-    
+
     await processMonthlyAccrual();
 
     await AuditTrail.log({
@@ -594,9 +599,9 @@ exports.processMonthlyAccrual = async (req, res, next) => {
       severity: "MEDIUM",
     });
 
-    res.json({ 
-      success: true, 
-      message: "Monthly accrual processed successfully for all active users." 
+    res.json({
+      success: true,
+      message: "Monthly accrual processed successfully for all active users."
     });
   } catch (err) {
     next(err);

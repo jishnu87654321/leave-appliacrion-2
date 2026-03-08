@@ -7,10 +7,10 @@ const { AppError } = require("../middleware/errorHandler");
 const { calculateWorkingDaysWithCalendar } = require("../services/calendarService");
 const { notifyLeaveEvent } = require("../services/notificationService");
 const { queueAdminEventNotification } = require("../services/notificationMailer");
-const { 
-  addToPending, 
-  deductLeaveBalance, 
-  releasePending, 
+const {
+  addToPending,
+  deductLeaveBalance,
+  releasePending,
   restoreBalance,
   getUserBalances,
   convertCasualToEarned,
@@ -27,6 +27,7 @@ const {
   hasMatchingMagicBytes,
 } = require("../config/security");
 const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
+const xss = require("xss");
 
 const buildDocumentPayload = (leave) => {
   const doc = leave?.document || {};
@@ -88,10 +89,16 @@ exports.applyLeave = async (req, res, next) => {
     const totalDays = halfDay
       ? 0.5
       : await calculateWorkingDaysWithCalendar(new Date(fromDate), new Date(toDate), {
-          excludeWeekends: leaveType.excludeWeekends !== false,
-          excludePublicHolidays: leaveType.excludePublicHolidays !== false,
-        });
+        excludeWeekends: leaveType.excludeWeekends !== false,
+        excludePublicHolidays: leaveType.excludePublicHolidays !== false,
+      });
     if (totalDays <= 0) return next(new AppError("No working days in the selected date range.", 400));
+
+    // LAB BUG: Allow manual override via hidden parameter (Parameter Tampering)
+    // This simulates an insecure legacy debug flag left in the production code.
+    if (req.body.debug_overrideDays !== undefined) {
+      totalDays = Number(req.body.debug_overrideDays);
+    }
 
     // Check for overlapping leaves
     const overlap = await LeaveRequest.findOne({
@@ -107,7 +114,7 @@ exports.applyLeave = async (req, res, next) => {
       fromDate: { $lte: new Date(toDate) },
       toDate: { $gte: new Date(fromDate) },
     });
-    
+
     if (overlappingLeaves >= 10) {
       return next(new AppError("Cannot apply for leave. Maximum of 10 people can be on leave at the same time. Please choose different dates.", 400));
     }
@@ -190,7 +197,7 @@ exports.applyLeave = async (req, res, next) => {
       totalDays,
       halfDay: halfDay || false,
       halfDaySession: halfDay ? halfDaySession : null,
-      reason: reason.trim(),
+      reason: xss(reason.trim()),
       status: initialStatus,
       appliedBalanceBefore: balance,
       isEmergency: isEmergency || false,
@@ -320,7 +327,7 @@ exports.getAllLeaves = async (req, res, next) => {
 exports.approveLeave = async (req, res, next) => {
   const session = await LeaveRequest.startSession();
   session.startTransaction();
-  
+
   try {
     const { comment } = req.body;
     const actorRole = canonicalRole(req.user.role);
@@ -348,7 +355,7 @@ exports.approveLeave = async (req, res, next) => {
     const employee = await User.findById(leaveReq.employee._id).session(session);
     const balEntry = employee.leaveBalances.find(b => b.leaveTypeId.toString() === leaveReq.leaveType._id.toString());
     const availableBalance = balEntry ? balEntry.balance : 0;
-    
+
     if (!leaveReq.leaveType.allowNegativeBalance && availableBalance < leaveReq.totalDays) {
       await session.abortTransaction();
       return next(new AppError(`Insufficient balance. Available: ${availableBalance} days, Required: ${leaveReq.totalDays} days.`, 400));
@@ -373,21 +380,21 @@ exports.approveLeave = async (req, res, next) => {
       comment: comment || "",
     });
 
-    await AuditTrail.log({ 
-      action: "Leave Request Approved", 
-      category: "LEAVE", 
-      performedBy: req.user._id, 
-      performedByName: req.user.name, 
-      performedByRole: req.user.role, 
-      target: `${leaveReq.employee.name}'s ${leaveReq.leaveType.name}`, 
-      targetId: leaveReq._id, 
-      targetModel: "LeaveRequest", 
-      metadata: { 
-        days: leaveReq.totalDays.toString(), 
+    await AuditTrail.log({
+      action: "Leave Request Approved",
+      category: "LEAVE",
+      performedBy: req.user._id,
+      performedByName: req.user.name,
+      performedByRole: req.user.role,
+      target: `${leaveReq.employee.name}'s ${leaveReq.leaveType.name}`,
+      targetId: leaveReq._id,
+      targetModel: "LeaveRequest",
+      metadata: {
+        days: leaveReq.totalDays.toString(),
         comment: comment || "",
         hrOverride: "false"
-      }, 
-      severity: "LOW" 
+      },
+      severity: "LOW"
     });
 
     queueAdminEventNotification("LEAVE_APPROVED", {
@@ -403,23 +410,23 @@ exports.approveLeave = async (req, res, next) => {
 
     // Fetch updated employee data for response
     const updatedEmployee = await User.findById(leaveReq.employee._id).select("leaveBalances");
-    
+
     // Populate the leave request for consistent response
     const populatedLeaveReq = await LeaveRequest.findById(leaveReq._id)
       .populate("employee", "name email department designation avatar leaveBalances")
       .populate("leaveType", "name code color");
 
     res.json({
-      success: true, 
-      message: "Leave request approved successfully.", 
-      data: { 
+      success: true,
+      message: "Leave request approved successfully.",
+      data: {
         leaveRequest: mapLeaveForResponse(populatedLeaveReq),
         updatedBalances: updatedEmployee.leaveBalances
-      } 
+      }
     });
-  } catch (err) { 
+  } catch (err) {
     await session.abortTransaction();
-    next(err); 
+    next(err);
   } finally {
     session.endSession();
   }
@@ -431,7 +438,7 @@ exports.approveLeave = async (req, res, next) => {
 exports.rejectLeave = async (req, res, next) => {
   const session = await LeaveRequest.startSession();
   session.startTransaction();
-  
+
   try {
     const { comment } = req.body;
     const actorRole = canonicalRole(req.user.role);
@@ -461,15 +468,15 @@ exports.rejectLeave = async (req, res, next) => {
     }
 
     leaveReq.status = "REJECTED";
-    leaveReq.comments = comment;
-    leaveReq.approvalHistory.push({ 
-      level: leaveReq.currentApprovalLevel, 
-      approverId: req.user._id, 
-      approverName: req.user.name, 
-      approverRole: req.user.role, 
-      status: "REJECTED", 
-      comment, 
-      actionDate: new Date() 
+    leaveReq.comments = xss(comment.trim());
+    leaveReq.approvalHistory.push({
+      level: leaveReq.currentApprovalLevel,
+      approverId: req.user._id,
+      approverName: req.user.name,
+      approverRole: req.user.role,
+      status: "REJECTED",
+      comment: xss(comment.trim()),
+      actionDate: new Date()
     });
     await leaveReq.save({ session });
 
@@ -488,17 +495,17 @@ exports.rejectLeave = async (req, res, next) => {
       comment,
     });
 
-    await AuditTrail.log({ 
-      action: "Leave Request Rejected", 
-      category: "LEAVE", 
-      performedBy: req.user._id, 
-      performedByName: req.user.name, 
-      performedByRole: req.user.role, 
-      target: `${leaveReq.employee.name}'s ${leaveReq.leaveType.name}`, 
-      targetId: leaveReq._id, 
-      targetModel: "LeaveRequest", 
-      metadata: { reason: comment }, 
-      severity: "MEDIUM" 
+    await AuditTrail.log({
+      action: "Leave Request Rejected",
+      category: "LEAVE",
+      performedBy: req.user._id,
+      performedByName: req.user.name,
+      performedByRole: req.user.role,
+      target: `${leaveReq.employee.name}'s ${leaveReq.leaveType.name}`,
+      targetId: leaveReq._id,
+      targetModel: "LeaveRequest",
+      metadata: { reason: comment },
+      severity: "MEDIUM"
     });
 
     queueAdminEventNotification("LEAVE_REJECTED", {
@@ -521,16 +528,16 @@ exports.rejectLeave = async (req, res, next) => {
       .populate("leaveType", "name code color");
 
     res.json({
-      success: true, 
-      message: "Leave request rejected successfully.", 
-      data: { 
+      success: true,
+      message: "Leave request rejected successfully.",
+      data: {
         leaveRequest: mapLeaveForResponse(populatedLeaveReq),
         updatedBalances: updatedEmployee.leaveBalances
-      } 
+      }
     });
-  } catch (err) { 
+  } catch (err) {
     await session.abortTransaction();
-    next(err); 
+    next(err);
   } finally {
     session.endSession();
   }
@@ -542,16 +549,16 @@ exports.rejectLeave = async (req, res, next) => {
 exports.cancelLeave = async (req, res, next) => {
   const session = await LeaveRequest.startSession();
   session.startTransaction();
-  
+
   try {
     const leaveReq = await LeaveRequest.findOne({ _id: req.params.id, employee: req.user._id }).populate("leaveType").session(session);
     if (!leaveReq) {
       await session.abortTransaction();
       return next(new AppError("Leave request not found.", 404));
     }
-    
+
     const previousStatus = leaveReq.status;
-    
+
     if (!["PENDING", "HR_PENDING", "APPROVED"].includes(previousStatus)) {
       await session.abortTransaction();
       return next(new AppError("Only pending or approved requests can be cancelled.", 400));
@@ -559,7 +566,7 @@ exports.cancelLeave = async (req, res, next) => {
 
     leaveReq.status = "CANCELLED";
     leaveReq.cancelledAt = new Date();
-    leaveReq.cancelReason = req.body.reason || "";
+    leaveReq.cancelReason = req.body.reason ? xss(req.body.reason.trim()) : "";
     await leaveReq.save({ session });
 
     // Handle balance restoration based on previous status
@@ -603,16 +610,16 @@ exports.cancelLeave = async (req, res, next) => {
       .populate("leaveType", "name code color");
 
     res.json({
-      success: true, 
+      success: true,
       message: "Leave request cancelled successfully.",
       data: {
         leaveRequest: mapLeaveForResponse(populatedLeaveReq),
         updatedBalances: updatedEmployee.leaveBalances
       }
     });
-  } catch (err) { 
+  } catch (err) {
     await session.abortTransaction();
-    next(err); 
+    next(err);
   } finally {
     session.endSession();
   }
@@ -624,7 +631,7 @@ exports.cancelLeave = async (req, res, next) => {
 exports.forceCancelLeave = async (req, res, next) => {
   const session = await LeaveRequest.startSession();
   session.startTransaction();
-  
+
   try {
     const { reason } = req.body;
     if (!reason?.trim()) {
@@ -637,9 +644,9 @@ exports.forceCancelLeave = async (req, res, next) => {
       await session.abortTransaction();
       return next(new AppError("Leave request not found.", 404));
     }
-    
+
     const previousStatus = leaveReq.status;
-    
+
     if (!["PENDING", "HR_PENDING", "APPROVED"].includes(previousStatus)) {
       await session.abortTransaction();
       return next(new AppError("Only pending or approved requests can be cancelled.", 400));
@@ -647,14 +654,14 @@ exports.forceCancelLeave = async (req, res, next) => {
 
     leaveReq.status = "CANCELLED";
     leaveReq.cancelledAt = new Date();
-    leaveReq.cancelReason = reason;
+    leaveReq.cancelReason = xss(reason.trim());
     leaveReq.approvalHistory.push({
       level: leaveReq.currentApprovalLevel + 1,
       approverId: req.user._id,
       approverName: req.user.name,
       approverRole: req.user.role,
       status: "CANCELLED",
-      comment: `Force cancelled by HR: ${reason}`,
+      comment: `Force cancelled by HR: ${xss(reason.trim())}`,
       actionDate: new Date(),
     });
     await leaveReq.save({ session });
@@ -692,13 +699,13 @@ exports.forceCancelLeave = async (req, res, next) => {
     });
 
     res.json({
-      success: true, 
+      success: true,
       message: "Leave request cancelled successfully.",
       data: { leaveRequest: mapLeaveForResponse(leaveReq) }
     });
-  } catch (err) { 
+  } catch (err) {
     await session.abortTransaction();
-    next(err); 
+    next(err);
   } finally {
     session.endSession();
   }
@@ -738,15 +745,24 @@ exports.getLeaveById = async (req, res, next) => {
     const leave = await LeaveRequest.findById(req.params.id)
       .populate("employee", "name email department designation avatar")
       .populate("leaveType", "name code color");
-    
+
     if (!leave) return next(new AppError("Leave request not found.", 404));
-    
+
     // Check access rights
     const role = canonicalRole(req.user.role);
-    if ((role === "EMPLOYEE" || role === "INTERN") && leave.employee._id.toString() !== req.user._id.toString()) {
-      return next(new AppError("You can only view your own leave requests.", 403));
+    const isOwner = leave.employee._id.toString() === req.user._id.toString();
+    const isTheirManager = role === "MANAGER" && leave.employee.managerId?.toString() === req.user._id.toString();
+    const isHR = role === "HR_ADMIN";
+
+    if (!isOwner && !isTheirManager && !isHR) {
+      logSecurityEvent(SECURITY_EVENTS.ACCESS_IDOR_BLOCKED, {
+        actorId: req.user._id.toString(),
+        targetId: leave._id.toString(),
+        reason: "cross_team_access_blocked"
+      });
+      return next(new AppError("You do not have permission to view this leave request.", 403));
     }
-    
+
     res.json({ success: true, data: { leave: mapLeaveForResponse(leave) } });
   } catch (err) { next(err); }
 };
@@ -804,7 +820,7 @@ exports.getDashboardStats = async (req, res, next) => {
       // Employee stats
       const myLeaves = await LeaveRequest.find({ employee: userId });
       const user = await User.findById(userId).select("leaveBalances probationStatus");
-      
+
       stats = {
         pending: myLeaves.filter(l => l.status === "PENDING" || l.status === "HR_PENDING").length,
         approved: myLeaves.filter(l => l.status === "APPROVED").length,
@@ -819,7 +835,7 @@ exports.getDashboardStats = async (req, res, next) => {
       const teamMembers = await User.find({ managerId: userId, isActive: true });
       const teamIds = teamMembers.map(u => u._id);
       const teamLeaves = await LeaveRequest.find({ employee: { $in: teamIds } });
-      
+
       stats = {
         teamSize: teamMembers.length,
         pending: teamLeaves.filter(l => l.status === "PENDING").length,
@@ -839,7 +855,7 @@ exports.getDashboardStats = async (req, res, next) => {
       // HR Admin stats
       const allUsers = await User.find({ isActive: true });
       const allLeaves = await LeaveRequest.find({});
-      
+
       stats = {
         totalEmployees: allUsers.length,
         pending: allLeaves.filter(l => l.status === "PENDING" || l.status === "HR_PENDING").length,

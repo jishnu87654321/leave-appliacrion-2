@@ -3,6 +3,7 @@ const User = require("../models/User");
 const LeaveType = require("../models/LeaveType");
 const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
+const { canonicalRole } = require("../utils/roles");
 
 /**
  * GET /api/reports/employee — Employee-wise report
@@ -17,6 +18,12 @@ exports.employeeReport = async (req, res, next) => {
     let userQuery = { role: { $nin: ["HR_ADMIN", "hr_admin", "ADMIN", "HR"] }, isActive: true };
     if (department) userQuery.department = department;
     if (employeeId) userQuery._id = employeeId;
+
+    // Data boundary for managers
+    const role = canonicalRole(req.user.role);
+    if (role === "MANAGER") {
+      userQuery.$or = [{ managerId: req.user._id }, { _id: req.user._id }];
+    }
 
     const employees = await User.find(userQuery).select("name email department designation joinDate probationStatus leaveBalances");
     const leaveTypes = await LeaveType.find({ isActive: true });
@@ -74,6 +81,10 @@ exports.employeeReport = async (req, res, next) => {
  */
 exports.departmentReport = async (req, res, next) => {
   try {
+    const role = canonicalRole(req.user.role);
+    if (role !== "HR_ADMIN") {
+      return next(new AppError("Only HR Admins can view cross-department reports.", 403));
+    }
     const { startDate, endDate } = req.query;
     const departments = [...new Set((await User.distinct("department")))];
     const dateFilter = {};
@@ -137,7 +148,14 @@ exports.exportCSV = async (req, res, next) => {
     if (status) query.status = status;
     if (startDate && endDate) { query.fromDate = { $gte: new Date(startDate) }; query.toDate = { $lte: new Date(endDate) }; }
 
-    let leaves = await LeaveRequest.find(query).populate("employee", "name email department designation").populate("leaveType", "name code").sort({ createdAt: -1 });
+    const role = canonicalRole(req.user.role);
+    let leaves = await LeaveRequest.find(query).populate("employee", "name email department designation managerId").populate("leaveType", "name code").sort({ createdAt: -1 });
+
+    // Data boundary for managers
+    if (role === "MANAGER") {
+      leaves = leaves.filter(l => l.employee?._id.toString() === req.user._id.toString() || l.employee?.managerId?.toString() === req.user._id.toString());
+    }
+
     if (department) leaves = leaves.filter(l => l.employee?.department === department);
 
     const rows = [

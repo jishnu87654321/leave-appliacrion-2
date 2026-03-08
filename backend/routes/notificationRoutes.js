@@ -10,7 +10,9 @@ const {
   notifyContactSubmission,
 } = require("../controllers/notificationController");
 
-router.post("/contact-submission", notifyContactSubmission);
+const { apiLimiter } = require("../middleware/rateLimiter");
+
+router.post("/contact-submission", apiLimiter, notifyContactSubmission);
 
 router.use(protect);
 

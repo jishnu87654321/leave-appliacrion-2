@@ -12,10 +12,20 @@ exports.protect = async (req, res, next) => {
     let token;
 
     // Extract token from Authorization header or cookie
-    if (req.headers.authorization?.startsWith("Bearer ")) {
-      token = req.headers.authorization.split(" ")[1];
-    } else if (req.cookies?.jwt) {
-      token = req.cookies.jwt;
+    const authHeader = req.headers.authorization;
+    const cookieToken = req.cookies?.jwt;
+
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (cookieToken) {
+      // CSRF Protection: Only allow cookies for GET/HEAD requests by default
+      // to prevent state-changing actions via automatic cookie transmission.
+      const stateChangingMethods = ["POST", "PUT", "DELETE", "PATCH"];
+      if (stateChangingMethods.includes(req.method)) {
+        logSecurityEvent(SECURITY_EVENTS.AUTH_CSRF_BLOCK, { ip: req.ip, method: req.method });
+        return next(new AppError("State-changing requests require an Authorization header for security.", 401));
+      }
+      token = cookieToken;
     }
 
     if (!token) {

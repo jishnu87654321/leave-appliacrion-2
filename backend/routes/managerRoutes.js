@@ -17,12 +17,11 @@ const {
 
 router.use(protect);
 
-// Public routes (authenticated users)
-router.get("/user/:userId", getManagerByUserId);
-router.get("/:id/team", getTeamMembers);
-
 // Manager and HR Admin routes
 router.use(restrictTo("HR_ADMIN", "MANAGER"));
+
+router.get("/user/:userId", getManagerByUserId);
+router.get("/:id/team", getTeamMembers);
 
 router.get("/", getAllManagers);
 router.get("/stats/overview", getManagerStats);

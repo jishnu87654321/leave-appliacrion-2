@@ -34,15 +34,19 @@ const globalErrorHandler = (err, req, res, next) => {
   if (err.name === "JsonWebTokenError") error = handleJWTError();
   if (err.name === "TokenExpiredError") error = handleJWTExpired();
 
-  if (process.env.NODE_ENV === "production" && !error.isOperational) {
-    logger.error("UNEXPECTED ERROR:", err);
-    return res.status(500).json({ success: false, message: "Something went wrong. Please try again later." });
+  if (process.env.NODE_ENV === "production") {
+    // 1. Generic message for unexpected errors
+    if (!error.isOperational) {
+      logger.error("UNEXPECTED ERROR:", err);
+      return res.status(500).json({ success: false, message: "Something went wrong. Please try again later." });
+    }
+    // 2. Operational error (safe to show to user but no stack trace)
+    return res.status(error.statusCode).json({ success: false, status: error.status, message: error.message });
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    logger.error(err);
-    return res.status(error.statusCode).json({ success: false, status: error.status, message: error.message, stack: err.stack });
-  }
+  // Development environment (show detailed error)
+  logger.error(err);
+  return res.status(error.statusCode).json({ success: false, status: error.status, message: error.message, stack: err.stack, error: err });
 
   res.status(error.statusCode).json({ success: false, status: error.status, message: error.message });
 };

@@ -1,7 +1,7 @@
 const express = require("express");
 const { body } = require("express-validator");
 const router = express.Router();
-const { register, login, getMe, updatePassword, forgotPassword, logout } = require("../controllers/authController");
+const { register, login, getMe, updatePassword, forgotPassword, resetPassword, logout } = require("../controllers/authController");
 const { protect } = require("../middleware/auth");
 const { authLimiter } = require("../middleware/rateLimiter");
 const emailValidator = body("email").custom((value) => /^[^\s@]+@[^\s@]+$/.test(String(value || "").trim())).withMessage("Valid email is required");
@@ -30,6 +30,7 @@ router.post("/login", authLimiter, [
 ], login);
 
 router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/reset-password/:token", authLimiter, resetPassword);
 
 // Protected
 router.use(protect);

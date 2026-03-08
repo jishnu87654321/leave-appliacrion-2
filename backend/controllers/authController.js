@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const { canonicalRole, normalizeRoleForDb } = require("../utils/roles");
 const { isPasswordCompromised } = require("../services/pwnedPasswordService");
 const { logSecurityEvent, SECURITY_EVENTS } = require("../services/securityEventService");
+const xss = require("xss");
 
 const cookieOptions = () => ({
   httpOnly: true,
@@ -41,7 +42,7 @@ exports.register = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return next(new AppError(errors.array()[0].msg, 400));
 
-    const { name, email, password, department, designation, phone, role } = req.body;
+    const { name, email, password, department, designation, phone } = req.body;
 
     if (await isPasswordCompromised(password)) {
       return next(new AppError("Password has appeared in known breaches. Choose a different password.", 400));
@@ -50,16 +51,19 @@ exports.register = async (req, res, next) => {
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) return next(new AppError("Email already registered.", 409));
 
-    const requestedRole = normalizeRoleForDb(role || "employee");
+    // Fix 1: Sanitize input to prevent Stored XSS
+    const sanitizedName = xss(name.trim());
+    const sanitizedDepartment = xss(department.trim());
 
+    // Fix 2: Hardcode role and isActive to prevent Mass Assignment/Privilege Escalation
     const user = await User.create({
-      name: name.trim(),
+      name: sanitizedName,
       email: email.toLowerCase().trim(),
       password,
-      department: department.trim(),
+      department: sanitizedDepartment,
       designation: designation?.trim() || "",
       phone: phone?.trim() || "",
-      role: requestedRole,
+      role: "employee",
       isActive: false,
       probationStatus: true,
       probationEndDate: new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
@@ -67,54 +71,36 @@ exports.register = async (req, res, next) => {
 
     await initializeUserBalances(user._id);
 
-    if (canonicalRole(requestedRole) === "MANAGER") {
-      const Manager = require("../models/Manager");
-      await Manager.create({
-        userId: user._id,
-        department: user.department,
-        managementLevel: "MANAGER",
-        responsibilities: [],
-        approvalAuthority: {
-          maxLeaveDays: 30,
-          canApproveSpecialLeave: false,
-          canOverrideRules: false,
-        },
-        isActive: false,
-      });
-    }
-
     await AuditTrail.log({
       action: "User Registered",
       category: "AUTH",
       performedBy: user._id,
       performedByName: user.name,
-      performedByRole: requestedRole,
+      performedByRole: "EMPLOYEE",
       target: `${user.name} (${user.email})`,
-      metadata: { department, role: requestedRole },
+      metadata: { department: sanitizedDepartment, role: "employee" },
     });
 
     const hrAdmins = await User.find({ role: { $in: ["HR_ADMIN", "hr_admin", "ADMIN", "HR"] }, isActive: true });
-    const canonicalRequestedRole = canonicalRole(requestedRole);
-    const roleLabel = canonicalRequestedRole === "MANAGER" ? "Manager" : canonicalRequestedRole === "INTERN" ? "Intern" : "Employee";
+
+    // Role is hardcoded to "employee" (Fix 2)
+    const roleLabel = "Employee";
 
     for (const admin of hrAdmins) {
       await Notification.create({
         user: admin._id,
-        message: `New ${roleLabel} registration: ${user.name} (${user.email}) - ${department}. Please review and activate their account.`,
+        message: `New ${roleLabel} registration: ${user.name} (${user.email}) - ${user.department}. Please review and activate their account.`,
         type: "INFO",
       });
     }
 
-    const successMessage =
-      canonicalRequestedRole === "MANAGER"
-        ? "Registration successful. Your manager account will be reviewed and activated by HR Admin."
-        : "Registration successful. Your account will be activated by HR Admin.";
+    const successMessage = "Registration successful. Your account will be activated by HR Admin.";
 
     queueAdminEventNotification("NEW_EMPLOYEE_REGISTRATION", {
       employeeName: user.name,
       employeeEmail: user.email,
       department: user.department,
-      role: requestedRole,
+      role: "employee",
       registrationTime: new Date().toISOString(),
       activationStatus: user.isActive ? "Active" : "Pending Activation",
     });
@@ -203,7 +189,12 @@ exports.updatePassword = async (req, res, next) => {
     }
     const user = await User.findById(req.user._id).select("+password");
     if (!(await user.comparePassword(currentPassword))) return next(new AppError("Current password is incorrect.", 401));
-    if (newPassword.length < 6) return next(new AppError("Password must be at least 6 characters.", 400));
+
+    // Enforce high complexity (same as registration)
+    if (newPassword.length < 12 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
+      return next(new AppError("Password must be 12+ chars with uppercase, lowercase, number, and special character.", 400));
+    }
+
     user.password = newPassword;
     await user.save();
     await AuditTrail.log({ action: "Password Changed", category: "AUTH", performedBy: user._id, performedByName: user.name, performedByRole: user.role, target: user.email, severity: "MEDIUM" });
@@ -217,7 +208,8 @@ exports.updatePassword = async (req, res, next) => {
 exports.forgotPassword = async (req, res, next) => {
   try {
     const user = await User.findOne({ email: req.body.email?.toLowerCase() });
-    if (!user) return res.json({ success: true, message: "If this email exists, a reset link has been sent." });
+    const genericMessage = "If this email is registered, a reset link has been sent.";
+    if (!user) return res.json({ success: true, message: genericMessage });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
     user.resetPasswordToken = crypto.createHash("sha256").update(resetToken).digest("hex");
@@ -228,7 +220,43 @@ exports.forgotPassword = async (req, res, next) => {
     await sendEmail({ to: user.email, subject: "Password Reset Request - LeaveMS", html: `<p>Hello ${user.name},</p><p>Reset your password <a href="${resetURL}">here</a>. This link expires in 1 hour.</p>` });
     logSecurityEvent(SECURITY_EVENTS.AUTH_PASSWORD_RESET_REQUESTED, { userId: user._id.toString() });
 
-    res.json({ success: true, message: "Password reset link sent to your email." });
+    res.json({ success: true, message: genericMessage });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) return next(new AppError("Invalid or expired reset token.", 400));
+
+    // Enforce complexity
+    if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      return next(new AppError("Password must be 12+ chars with uppercase, lowercase, number, and special character.", 400));
+    }
+
+    if (await isPasswordCompromised(password)) {
+      return next(new AppError("Password has appeared in known breaches. Choose a different password.", 400));
+    }
+
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    await AuditTrail.log({ action: "Password Reset Success", category: "AUTH", performedBy: user._id, performedByName: user.name, performedByRole: user.role, target: user.email, severity: "MEDIUM" });
+    logSecurityEvent(SECURITY_EVENTS.AUTH_PASSWORD_RESET_SUCCESS, { userId: user._id.toString() });
+
+    res.json({ success: true, message: "Password reset successfully. You can now login." });
   } catch (err) {
     next(err);
   }

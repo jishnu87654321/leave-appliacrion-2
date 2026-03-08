@@ -21,6 +21,9 @@ const getRequiredJwtSecret = () => {
 };
 
 const getAllowedOrigins = () => {
+  if (process.env.NODE_ENV === "production") {
+    return ["https://leave-management-nine-navy.vercel.app"];
+  }
   return String(process.env.CORS_ORIGIN || "")
     .split(",")
     .map((origin) => origin.trim())

@@ -15,8 +15,8 @@ router.use(protect);
 router.get("/", getAllLeaveTypes);
 router.get("/:id", getLeaveTypeById);
 
-// Managers and HR can manage leave types
-router.use(restrictTo("HR_ADMIN", "MANAGER"));
+// Only HR can manage leave types
+router.use(restrictTo("HR_ADMIN"));
 router.post("/", createLeaveType);
 router.put("/:id", updateLeaveType);
 router.delete("/:id", deleteLeaveType);

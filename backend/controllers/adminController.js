@@ -182,7 +182,15 @@ exports.createDepartmentChangeRequest = async (req, res, next) => {
 
 exports.getDepartmentChangeRequests = async (req, res, next) => {
   try {
-    const requests = await DepartmentChangeRequest.find({})
+    const { canonicalRole } = require("../utils/roles");
+    const role = canonicalRole(req.user.role);
+
+    let query = {};
+    if (role === "MANAGER") {
+      query = { requestedBy: req.user._id };
+    }
+
+    const requests = await DepartmentChangeRequest.find(query)
       .populate("userId", "name email department role")
       .populate("requestedBy", "name email")
       .populate("confirmedBy", "name email")

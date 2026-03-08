@@ -2,6 +2,7 @@ const LeaveType = require("../models/LeaveType");
 const AuditTrail = require("../models/AuditTrail");
 const { AppError } = require("../middleware/errorHandler");
 const POLICY = require("../config/policy");
+const xss = require("xss");
 
 const CORE_POLICIES = {
   EL: {
@@ -154,9 +155,9 @@ exports.createLeaveType = async (req, res, next) => {
     if (existing) return next(new AppError("Leave type with this name or code already exists.", 409));
 
     const leaveType = await LeaveType.create({
-      name: name.trim(),
+      name: xss(name.trim()),
       code: code.trim().toUpperCase(),
-      description: description?.trim() || "",
+      description: description ? xss(description.trim()) : "",
       accrualType,
       accrualRate,
       accrualPerMonth: accrualType === "MONTHLY" ? accrualRate : 0,

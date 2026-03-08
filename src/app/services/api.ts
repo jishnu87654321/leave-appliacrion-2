@@ -38,9 +38,16 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle errors
+// Response interceptor to handle errors and unwrap data
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // If the backend wrapped the actual payload in a 'data' property
+    // (e.g. { success: true, data: { ... } }), flatten it into the main data object.
+    if (response.data && response.data.success && response.data.data) {
+      response.data = { ...response.data, ...response.data.data };
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401 && (sessionStorage.getItem('user') || sessionStorage.getItem('token'))) {
       sessionStorage.removeItem('user');

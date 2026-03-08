@@ -10,10 +10,12 @@ function normalizeDate(value) {
   return text;
 }
 
+const xss = require("xss");
+
 exports.upsertHoliday = async (req, res, next) => {
   try {
     const date = normalizeDate(req.body?.date);
-    const title = String(req.body?.title || "").trim();
+    const title = xss(String(req.body?.title || "").trim());
 
     if (!date) return next(new AppError("Invalid date. Use YYYY-MM-DD.", 400));
     if (!title) return next(new AppError("Holiday title is required.", 400));

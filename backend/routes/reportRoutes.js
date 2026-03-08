@@ -19,6 +19,6 @@ router.get("/employee", employeeReport);
 router.get("/department", departmentReport);
 router.get("/monthly", monthlyReport);
 router.get("/export", exportCSV);
-router.get("/audit-trail", getAuditTrail); // Managers can now access audit trail
+router.get("/audit-trail", restrictTo("HR_ADMIN"), getAuditTrail);
 
 module.exports = router;
