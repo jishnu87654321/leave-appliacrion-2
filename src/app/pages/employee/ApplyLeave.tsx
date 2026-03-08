@@ -83,7 +83,10 @@ export default function ApplyLeave() {
 
   const selectedType = resolvedLeaveTypes.find((lt) => lt._id === form.leaveTypeId);
   const selectedBalance = leaveBalances.find((lb) => lb.leaveType._id === form.leaveTypeId);
-  const availableBalance = selectedBalance ? selectedBalance.available : 0;
+
+  // Use available if present, fallback to balance
+  const availableBalance = selectedBalance ? (selectedBalance.available ?? selectedBalance.balance) : 0;
+  const totalBalance = selectedBalance ? selectedBalance.balance : 0;
 
   const hasEnoughBalance = Boolean(selectedType?.allowNegativeBalance) || availableBalance >= totalDays;
   const isProbationRestricted = Boolean(currentUser.probationStatus) && selectedType?.applicableDuringProbation === false;
@@ -235,8 +238,12 @@ export default function ApplyLeave() {
                     value={form.fromDate}
                     min={today}
                     onChange={(e) => {
-                      handleChange("fromDate", e.target.value);
-                      if (!form.toDate || form.toDate < e.target.value) handleChange("toDate", e.target.value);
+                      const newFrom = e.target.value;
+                      handleChange("fromDate", newFrom);
+                      // If toDate is empty or before the new fromDate, update toDate
+                      if (!form.toDate || new Date(form.toDate) < new Date(newFrom)) {
+                        handleChange("toDate", newFrom);
+                      }
                     }}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
                     required
@@ -256,23 +263,30 @@ export default function ApplyLeave() {
                 </div>
               </div>
 
-              {totalDays > 0 && (
+              {totalDays > 0 && form.leaveTypeId && (
                 <div
-                  className={`flex items-center gap-2 p-3 rounded-xl text-sm ${
-                    hasEnoughBalance ? "bg-blue-50 border border-blue-100 text-blue-800" : "bg-red-50 border border-red-100 text-red-700"
-                  }`}
+                  className={`flex items-start gap-2 p-3 rounded-xl text-sm transition-all ${hasEnoughBalance ? "bg-blue-50 border border-blue-100 text-blue-800" : "bg-red-50 border border-red-100 text-red-700 shadow-sm"
+                    }`}
                 >
-                  <Info className="w-4 h-4 flex-shrink-0" />
-                  <span>
-                    <strong>{totalDays} working day{totalDays !== 1 ? "s" : ""}</strong> requested.
+                  <Info className={`w-4 h-4 mt-0.5 flex-shrink-0 ${hasEnoughBalance ? "text-blue-500" : "text-red-500"}`} />
+                  <div className="flex-1">
+                    <p className="font-medium">
+                      {totalDays} working day{totalDays !== 1 ? "s" : ""} requested.
+                    </p>
                     {selectedType && (
-                      <>
-                        {" "}
-                        Available balance: <strong>{availableBalance} {selectedType.code}</strong>.
-                      </>
+                      <p className="text-xs opacity-90 mt-0.5">
+                        Balance: <strong>{totalBalance}</strong> days.
+                        {availableBalance !== totalBalance && (
+                          <> (Available: <strong>{availableBalance}</strong> days after pending requests)</>
+                        )}
+                      </p>
                     )}
-                    {!hasEnoughBalance && " Warning: Insufficient balance!"}
-                  </span>
+                    {!hasEnoughBalance && (
+                      <p className="font-bold mt-1 text-xs">
+                        ⚠️ Insufficient {selectedType?.code || "leave"} balance!
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
