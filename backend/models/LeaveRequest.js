@@ -15,7 +15,7 @@ const leaveRequestSchema = new mongoose.Schema({
   leaveType: { type: mongoose.Schema.Types.ObjectId, ref: "LeaveType", required: [true, "Leave type required"] },
   fromDate: { type: Date, required: [true, "From date required"] },
   toDate: { type: Date, required: [true, "To date required"] },
-  totalDays: { type: Number, required: [true, "Total days required"], min: [0.5, "Minimum 0.5 day"] },
+  totalDays: { type: Number, required: [true, "Total days required"] },
   halfDay: { type: Boolean, default: false },
   halfDaySession: { type: String, enum: ["MORNING", "AFTERNOON", null], default: null },
   reason: { type: String, required: [true, "Reason is required"], trim: true, minlength: [10, "Reason must be at least 10 characters"] },
