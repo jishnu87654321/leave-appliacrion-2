@@ -86,7 +86,7 @@ exports.applyLeave = async (req, res, next) => {
     }
 
     // Calculate working days
-    const totalDays = halfDay
+    let totalDays = halfDay
       ? 0.5
       : await calculateWorkingDaysWithCalendar(new Date(fromDate), new Date(toDate), {
         excludeWeekends: leaveType.excludeWeekends !== false,
