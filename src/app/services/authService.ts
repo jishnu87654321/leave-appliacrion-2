@@ -17,10 +17,14 @@ export interface RegisterData {
 export const authService = {
   login: async (credentials: LoginCredentials) => {
     const response = await api.post('/auth/login', credentials);
-    if (response.data?.data?.user) {
-      sessionStorage.setItem('user', JSON.stringify(response.data.data.user));
+    const data = response.data?.data || response.data;
+    if (data?.user) {
+      sessionStorage.setItem('user', JSON.stringify(data.user));
     }
-    return response.data;
+    if (data?.token) {
+      sessionStorage.setItem('token', data.token);
+    }
+    return response;
   },
 
   register: async (data: RegisterData) => {
@@ -33,6 +37,7 @@ export const authService = {
       await api.post('/auth/logout');
     } finally {
       sessionStorage.removeItem('user');
+      sessionStorage.removeItem('token');
     }
   },
 

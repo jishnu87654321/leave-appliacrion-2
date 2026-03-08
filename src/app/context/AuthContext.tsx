@@ -90,15 +90,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const storedUser = sessionStorage.getItem("user");
 
       try {
-        if (storedUser) {
+        const token = sessionStorage.getItem("token");
+        if (storedUser && token) {
           setCurrentUser(JSON.parse(storedUser));
-        } else {
+        } else if (token) {
           const me = await authService.getCurrentUser();
           setCurrentUser(me);
         }
-        await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
+
+        if (sessionStorage.getItem("token")) {
+          await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
+        }
       } catch (error) {
         sessionStorage.removeItem("user");
+        sessionStorage.removeItem("token");
       }
       setIsLoading(false);
     };
@@ -168,12 +173,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = async (email: string, password: string): Promise<{ success: boolean; message: string; user?: User }> => {
     try {
       const response = await authService.login({ email: String(email || "").trim().toLowerCase(), password });
-      setCurrentUser(response.data.user);
-      sessionStorage.setItem("user", JSON.stringify(response.data.user));
-      // Sync with localStorage for legacy components that might still look there
-      localStorage.setItem("user", JSON.stringify(response.data.user));
+      const token = response.data.data?.token || response.data.token;
+      if (token) {
+        sessionStorage.setItem("token", token);
+        localStorage.setItem("token", token);
+      }
+
+      setCurrentUser(response.data.user || response.data.data?.user);
+      sessionStorage.setItem("user", JSON.stringify(response.data.user || response.data.data?.user));
+      localStorage.setItem("user", JSON.stringify(response.data.user || response.data.data?.user));
+
       await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
-      return { success: true, message: "Login successful!", user: response.data.user };
+      return { success: true, message: "Login successful!", user: response.data.user || response.data.data?.user };
     } catch (error: any) {
       const message = error.response?.data?.message || "Login failed. Please try again.";
       return { success: false, message };
@@ -188,6 +199,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setCurrentUser(null);
       sessionStorage.removeItem("user");
+      sessionStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
       setNotifications([]);
       setLeaveBalances([]);
       setCreditInfo(null);

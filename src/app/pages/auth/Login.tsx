@@ -12,15 +12,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const quickFill = (role: string) => {
-    const map: Record<string, { email: string; password: string }> = {
-      employee: { email: "alice@company.com", password: "password123" },
-      manager: { email: "johnmanager@gmail.com", password: "admin123" },
-      admin: { email: "Subramanya@aksharaenterprises.info", password: "admin123" },
-    };
-    setForm(map[role]);
-    setError("");
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,22 +64,6 @@ export default function Login() {
           <p className="text-gray-500 text-sm mt-1">Sign in to your LeaveMS account</p>
         </div>
 
-        {/* Quick Login Buttons */}
-        <div className="mb-6">
-          <p className="text-xs text-gray-400 font-medium mb-2">Quick Demo Login:</p>
-          <div className="flex gap-2">
-            {[
-              { key: "employee", label: "Employee", color: "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" },
-              { key: "manager", label: "Manager", color: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
-              { key: "admin", label: "HR Admin", color: "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100" },
-            ].map(({ key, label, color }) => (
-              <button key={key} type="button" onClick={() => quickFill(key)}
-                className={`flex-1 text-xs font-semibold py-1.5 rounded-lg border transition-colors ${color}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {error && (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-5">

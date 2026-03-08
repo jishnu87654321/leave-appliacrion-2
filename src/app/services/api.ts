@@ -14,6 +14,12 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
+    const token = sessionStorage.getItem('token');
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const method = String(config.method || '').toLowerCase();
     const url = String(config.url || '');
     const isLeaveApply = method === 'post' && url.includes('/leaves/apply');
@@ -36,8 +42,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && sessionStorage.getItem('user')) {
+    if (error.response?.status === 401 && (sessionStorage.getItem('user') || sessionStorage.getItem('token'))) {
       sessionStorage.removeItem('user');
+      sessionStorage.removeItem('token');
       window.location.href = '/login';
     }
     return Promise.reject(error);

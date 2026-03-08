@@ -33,7 +33,7 @@ const sendTokenResponse = (user, statusCode, res) => {
   delete userObj.lockUntil;
   userObj.role = normalizeRoleForDb(userObj.role);
   res.cookie("jwt", token, cookieOptions());
-  res.status(statusCode).json({ success: true, data: { user: userObj } });
+  res.status(statusCode).json({ success: true, data: { user: userObj, token } });
 };
 
 exports.register = async (req, res, next) => {
