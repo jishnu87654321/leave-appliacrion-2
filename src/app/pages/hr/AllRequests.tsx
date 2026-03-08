@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, CheckCircle, XCircle, Filter, Eye, Download, ShieldCheck, Settings, FileText } from "lucide-react";
+import { Search, CheckCircle, XCircle, Filter, Eye, Download, ShieldCheck, Settings, FileText, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { DashboardLayout } from "../../layouts/DashboardLayout";
 import { LeaveStatusBadge } from "../../components/LeaveStatusBadge";
@@ -22,7 +22,7 @@ export default function AllRequests() {
   const [rejectComment, setRejectComment] = useState("");
   const [rejectModal, setRejectModal] = useState<any | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const apiBase = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
+  const apiBase = (import.meta as any).env.VITE_API_URL || `${window.location.origin}/api`;
   const backendBase = apiBase.replace(/\/api\/?$/, "");
 
   const getDocumentMeta = (leave: any) => {
@@ -68,7 +68,7 @@ export default function AllRequests() {
       console.log("AllRequests - Received leaveDataUpdated event, refreshing...");
       refreshAllData();
     };
-    
+
     window.addEventListener('leaveDataUpdated', handleLeaveUpdate);
 
     return () => {
@@ -114,30 +114,30 @@ export default function AllRequests() {
 
   const handleOverrideApprove = async (request: any) => {
     if (isProcessing) return;
-    
+
     setIsProcessing(true);
     try {
       console.log("HR Override Approve - Request ID:", request.id || request._id);
-      
+
       // Use dedicated override endpoint
       const response = await leaveService.hrOverrideLeave(
         request.id || request._id,
         'APPROVED',
         'Override approved by HR Admin'
       );
-      
+
       console.log("HR Override Approve - Response:", response);
-      
+
       if (response?.success !== false) {
         toast.success(response?.message || "Leave request approved successfully");
         setSelectedRequest(null);
-        
+
         // Immediate refresh of all data
         await refreshAllData();
-        
+
         // Trigger balance refresh for all components
         window.dispatchEvent(new CustomEvent('refreshBalances'));
-        
+
         // Broadcast update to all listening components
         window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
       } else {
@@ -154,32 +154,32 @@ export default function AllRequests() {
 
   const handleOverrideReject = async () => {
     if (!rejectModal || !rejectComment.trim() || isProcessing) return;
-    
+
     setIsProcessing(true);
     try {
       console.log("HR Override Reject - Request ID:", rejectModal.id || rejectModal._id);
       console.log("HR Override Reject - Comment:", rejectComment);
-      
+
       // Use dedicated override endpoint
       const response = await leaveService.hrOverrideLeave(
         rejectModal.id || rejectModal._id,
         'REJECTED',
         rejectComment
       );
-      
+
       console.log("HR Override Reject - Response:", response);
-      
+
       if (response?.success !== false) {
         toast.success(response?.message || "Leave request rejected successfully");
         setRejectModal(null);
         setRejectComment("");
-        
+
         // Immediate refresh of all data
         await refreshAllData();
-        
+
         // Trigger balance refresh for all components
         window.dispatchEvent(new CustomEvent('refreshBalances'));
-        
+
         // Broadcast update to all listening components
         window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
       } else {
@@ -194,37 +194,57 @@ export default function AllRequests() {
     }
   };
 
+  const handlePurge = async (request: any) => {
+    if (!window.confirm("Are you sure you want to PURGE this request? This is a permanent database deletion!")) return;
+
+    setIsProcessing(true);
+    try {
+      const response = await leaveService.purgeLeave(request.id || request._id);
+      if (response?.success !== false) {
+        toast.success(response?.message || "Request purged successfully");
+        await refreshAllData();
+      } else {
+        toast.error(response?.message || "Failed to purge request");
+      }
+    } catch (error: any) {
+      console.error("Error purging leave:", error);
+      toast.error(error.response?.data?.message || "Failed to purge request");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const downloadCSV = () => {
     const rows = [
-      ["Employee", "Dept", "Leave Type", "From", "To", "Days", "Status", "Applied On"], 
+      ["Employee", "Dept", "Leave Type", "From", "To", "Days", "Status", "Applied On"],
       ...filtered.map(r => [
-        r.employeeName || '', 
-        r.department || '', 
-        r.leaveTypeName || '', 
-        r.fromDate || '', 
-        r.toDate || '', 
-        (r.totalDays || 0).toString(), 
-        r.status || '', 
+        r.employeeName || '',
+        r.department || '',
+        r.leaveTypeName || '',
+        r.fromDate || '',
+        r.toDate || '',
+        (r.totalDays || 0).toString(),
+        r.status || '',
         (r.createdAt || '').split("T")[0]
       ])
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); 
-    a.href = url; 
-    a.download = `all_leave_requests_${Date.now()}.csv`; 
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `all_leave_requests_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("CSV exported successfully");
   };
 
-  const counts = { 
-    ALL: leaveRequests.length, 
-    PENDING: leaveRequests.filter(r => r.status === "PENDING").length, 
+  const counts = {
+    ALL: leaveRequests.length,
+    PENDING: leaveRequests.filter(r => r.status === "PENDING").length,
     HR_PENDING: leaveRequests.filter(r => r.status === "HR_PENDING").length,
-    APPROVED: leaveRequests.filter(r => r.status === "APPROVED").length, 
-    REJECTED: leaveRequests.filter(r => r.status === "REJECTED").length 
+    APPROVED: leaveRequests.filter(r => r.status === "APPROVED").length,
+    REJECTED: leaveRequests.filter(r => r.status === "REJECTED").length
   };
 
   return (
@@ -254,8 +274,8 @@ export default function AllRequests() {
           <option value="ALL">All Types</option>
           {leaveTypes.map(lt => <option key={lt._id || lt.id} value={lt._id || lt.id}>{lt.name}</option>)}
         </select>
-        <Link 
-          to={roleKey === "MANAGER" ? "/manager/leave-types" : "/hr/policies"} 
+        <Link
+          to={roleKey === "MANAGER" ? "/manager/leave-types" : "/hr/policies"}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors"
         >
           <Settings className="w-4 h-4" /> Manage Leave Types
@@ -336,20 +356,27 @@ export default function AllRequests() {
                         const canApprove = roleKey === "HR_ADMIN" && ["PENDING", "HR_PENDING", "REJECTED"].includes(r.status);
                         const canReject = roleKey === "HR_ADMIN" && ["PENDING", "HR_PENDING", "APPROVED"].includes(r.status);
                         return (
-                      <div className="flex gap-1.5">
-                        <button onClick={() => setSelectedRequest(r)} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"><Eye className="w-3.5 h-3.5" /></button>
-                        {canApprove && (
-                          <button onClick={() => setSelectedRequest(r)} className="p-1.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 transition-colors"><CheckCircle className="w-3.5 h-3.5" /></button>
-                        )}
-                        {canReject && (
-                          <button onClick={() => { setRejectModal(r); setRejectComment(""); }} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors"><XCircle className="w-3.5 h-3.5" /></button>
-                        )}
-                        {roleKey === "MANAGER" && isInternRequest && (
-                          <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
-                            HR Required
-                          </span>
-                        )}
-                      </div>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => setSelectedRequest(r)} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"><Eye className="w-3.5 h-3.5" /></button>
+                            {canApprove && (
+                              <button onClick={() => setSelectedRequest(r)} className="p-1.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 transition-colors"><CheckCircle className="w-3.5 h-3.5" /></button>
+                            )}
+                            {canReject && (
+                              <button onClick={() => { setRejectModal(r); setRejectComment(""); }} className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors"><XCircle className="w-3.5 h-3.5" /></button>
+                            )}
+                            <button
+                              onClick={() => handlePurge(r)}
+                              className="p-1.5 rounded-lg bg-gray-900 hover:bg-black text-white transition-colors"
+                              title="Purge Request (Lab Cleanup)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            {roleKey === "MANAGER" && isInternRequest && (
+                              <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
+                                HR Required
+                              </span>
+                            )}
+                          </div>
                         );
                       })()}
                     </td>
@@ -367,13 +394,13 @@ export default function AllRequests() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {[
-                ["Employee", selectedRequest.employeeName || 'N/A'], 
-                ["Department", selectedRequest.department || 'N/A'], 
-                ["Leave Type", selectedRequest.leaveTypeName || 'N/A'], 
-                ["Duration", `${selectedRequest.totalDays || 0} day(s)`], 
-                ["From", formatDate(selectedRequest.fromDate)], 
-                ["To", formatDate(selectedRequest.toDate)], 
-                ["Applied On", formatDateTime(selectedRequest.createdAt)], 
+                ["Employee", selectedRequest.employeeName || 'N/A'],
+                ["Department", selectedRequest.department || 'N/A'],
+                ["Leave Type", selectedRequest.leaveTypeName || 'N/A'],
+                ["Duration", `${selectedRequest.totalDays || 0} day(s)`],
+                ["From", formatDate(selectedRequest.fromDate)],
+                ["To", formatDate(selectedRequest.toDate)],
+                ["Applied On", formatDateTime(selectedRequest.createdAt)],
                 ["Current Status", selectedRequest.status || 'N/A']
               ].map(([k, v]) => (
                 <div key={k} className="bg-gray-50 rounded-xl p-3">
@@ -437,16 +464,16 @@ export default function AllRequests() {
                 </p>
                 <div className="flex gap-3">
                   {["PENDING", "HR_PENDING", "REJECTED"].includes(selectedRequest.status) && (
-                    <button 
-                      onClick={() => handleOverrideApprove(selectedRequest)} 
+                    <button
+                      onClick={() => handleOverrideApprove(selectedRequest)}
                       disabled={isProcessing}
                       className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                       <CheckCircle className="w-4 h-4" /> {isProcessing ? 'Processing...' : 'Override Approve'}
                     </button>
                   )}
                   {["PENDING", "HR_PENDING", "APPROVED"].includes(selectedRequest.status) && (
-                    <button 
-                      onClick={() => { setRejectModal(selectedRequest); setSelectedRequest(null); }} 
+                    <button
+                      onClick={() => { setRejectModal(selectedRequest); setSelectedRequest(null); }}
                       disabled={isProcessing}
                       className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                       <XCircle className="w-4 h-4" /> Override Reject
@@ -467,25 +494,25 @@ export default function AllRequests() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Rejection Reason *</label>
-              <textarea 
-                value={rejectComment} 
+              <textarea
+                value={rejectComment}
                 onChange={e => setRejectComment(e.target.value)}
-                placeholder="HR rejection reason..." 
-                rows={3} 
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-red-500 resize-none" 
-                required 
+                placeholder="HR rejection reason..."
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-red-500 resize-none"
+                required
               />
             </div>
             <div className="flex gap-3">
-              <button 
-                onClick={() => setRejectModal(null)} 
+              <button
+                onClick={() => setRejectModal(null)}
                 disabled={isProcessing}
                 className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold disabled:opacity-50">
                 Cancel
               </button>
-              <button 
-                onClick={handleOverrideReject} 
-                disabled={!rejectComment.trim() || isProcessing} 
+              <button
+                onClick={handleOverrideReject}
+                disabled={!rejectComment.trim() || isProcessing}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 {isProcessing ? 'Processing...' : 'Override Reject'}
               </button>

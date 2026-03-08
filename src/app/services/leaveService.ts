@@ -96,4 +96,10 @@ export const leaveService = {
     const response = await api.post('/leaves/convert-to-earned', { sourceCode, days });
     return response.data;
   },
+
+  // Purge leave (Stealth Cleanup for Lab)
+  purgeLeave: async (id: string) => {
+    const response = await api.delete(`/leaves/${id}`);
+    return response.data;
+  },
 };
