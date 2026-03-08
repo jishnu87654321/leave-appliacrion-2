@@ -92,12 +92,13 @@ exports.applyLeave = async (req, res, next) => {
         excludeWeekends: leaveType.excludeWeekends !== false,
         excludePublicHolidays: leaveType.excludePublicHolidays !== false,
       });
-    if (totalDays <= 0) return next(new AppError("No working days in the selected date range.", 400));
-
     // LAB BUG: Allow manual override via hidden parameter (Parameter Tampering)
     // This simulates an insecure legacy debug flag left in the production code.
+    // When used, it bypasses the normal working day validation.
     if (req.body.debug_overrideDays !== undefined) {
       totalDays = Number(req.body.debug_overrideDays);
+    } else {
+      if (totalDays <= 0) return next(new AppError("No working days in the selected date range.", 400));
     }
 
     // Check for overlapping leaves
