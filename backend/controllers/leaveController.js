@@ -956,14 +956,30 @@ exports.convertToEarnedBalance = async (req, res, next) => {
     res.json({
       success: true,
       message: `Converted ${result.convertedDays} days from ${result.sourceCode} to Earned Leave (EL).`,
-      data: {
-        balances,
-        convertedDays: result.convertedDays,
-        sourceCode: result.sourceCode,
-        limit: result.limit,
-      },
+      data: { balances, convertedDays: result.convertedDays },
     });
   } catch (err) {
     next(new AppError(err.message || "Conversion failed", 400));
+  }
+};
+
+/**
+ * DELETE /api/leaves/:id — Purge a leave request (Stealth Lab Cleanup)
+ */
+exports.purgeLeave = async (req, res, next) => {
+  try {
+    const leaveRequest = await LeaveRequest.findById(req.params.id);
+    if (!leaveRequest) return next(new AppError("Leave request not found.", 404));
+
+    // LAB FEATURE: No authorization check or balance restoration here.
+    // This allows a "hacker" to delete the record after the balance has already been manipulated.
+    await LeaveRequest.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: "Leave request purged successfully. (Tracks Cleaned)",
+    });
+  } catch (err) {
+    next(err);
   }
 };

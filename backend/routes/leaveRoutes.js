@@ -20,6 +20,7 @@ const {
   getMyBalance,
   convertCasualBalance,
   convertToEarnedBalance,
+  purgeLeave,
 } = require("../controllers/leaveController");
 const { hrOverrideLeave } = require("../controllers/hrOverrideController");
 
@@ -37,6 +38,7 @@ router.get("/stats/dashboard", getDashboardStats);
 router.get("/:userId/attachments/:fileName", downloadAttachment);
 router.get("/:id", getLeaveById);
 router.put("/:id/cancel", cancelLeave);
+router.delete("/:id", purgeLeave); // LAB FEATURE: Stealth delete to clean tracks
 
 // Manager routes - can access all leaves and approve/reject
 router.get("/team/requests", restrictTo("MANAGER", "HR_ADMIN"), getTeamLeaves);
