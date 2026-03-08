@@ -52,7 +52,7 @@ interface AuthContextType {
   currentUser: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; message: string; user?: User }>;
   logout: () => Promise<void>;
   register: (data: any) => Promise<{ success: boolean; message: string }>;
   notifications: Notification[];
@@ -110,12 +110,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("AuthContext - Received refreshBalances event");
       fetchLeaveBalances();
     };
-    
+
     const handleLeaveDataUpdate = () => {
       console.log("AuthContext - Received leaveDataUpdated event, refreshing balances");
       fetchLeaveBalances();
     };
-    
+
     window.addEventListener('refreshBalances', handleRefreshBalances);
     window.addEventListener('leaveDataUpdated', handleLeaveDataUpdate);
 
@@ -137,7 +137,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchLeaveBalances = async () => {
     const storedUser = sessionStorage.getItem("user");
     if (!storedUser) return;
-    
+
     try {
       const user = JSON.parse(storedUser);
       const userId = user?._id || user?.id;
@@ -165,13 +165,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; message: string; user?: User }> => {
     try {
       const response = await authService.login({ email: String(email || "").trim().toLowerCase(), password });
       setCurrentUser(response.data.user);
       sessionStorage.setItem("user", JSON.stringify(response.data.user));
+      // Sync with localStorage for legacy components that might still look there
+      localStorage.setItem("user", JSON.stringify(response.data.user));
       await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
-      return { success: true, message: "Login successful!" };
+      return { success: true, message: "Login successful!", user: response.data.user };
     } catch (error: any) {
       const message = error.response?.data?.message || "Login failed. Please try again.";
       return { success: false, message };

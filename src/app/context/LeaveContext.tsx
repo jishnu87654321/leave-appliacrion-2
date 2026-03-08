@@ -96,15 +96,9 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchLeaveRequests = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setLeaveRequests([]);
-        return;
-      }
-      
-      // Fetch based on user role - get from token or auth context
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
+      // Fetch based on user role - get from sessionStorage
+      const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+
       let response;
       if (roleKey(user.role) === 'HR_ADMIN' || roleKey(user.role) === 'MANAGER') {
         // HR and Manager get all leaves
@@ -113,7 +107,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
         // Employee gets own leaves
         response = await leaveService.getMyLeaves();
       }
-      
+
       // Transform API data to match component expectations
       const transformedLeaves = (response.data.leaves || []).map((leave: any) => ({
         ...leave,
@@ -126,7 +120,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
         leaveTypeCode: leave.leaveType?.code || leave.leaveTypeCode || '',
         leaveTypeColor: leave.leaveType?.color || leave.leaveTypeColor || '#3B82F6',
       }));
-      
+
       setLeaveRequests(transformedLeaves);
     } catch (error) {
       console.error("Failed to fetch leave requests:", error);
@@ -187,9 +181,9 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // Only fetch leave types if user is authenticated
-    const token = localStorage.getItem('token');
-    if (token) {
+    // Only fetch data if user is authenticated
+    const user = sessionStorage.getItem('user');
+    if (user) {
       const loadInitialData = async () => {
         setIsLoading(true);
         try {
@@ -198,10 +192,9 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
             fetchLeaveRequests(),
             fetchDashboardStats(),
           ]);
-          
-          // Fetch users for HR and Manager roles
-          const user = JSON.parse(localStorage.getItem('user') || '{}');
-          if (roleKey(user.role) === 'HR_ADMIN' || roleKey(user.role) === 'MANAGER') {
+
+          const parsedUser = JSON.parse(user);
+          if (roleKey(parsedUser.role) === 'HR_ADMIN' || roleKey(parsedUser.role) === 'MANAGER') {
             await fetchUsers();
           }
         } catch (error) {
@@ -211,7 +204,7 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
           setInitialLoadComplete(true);
         }
       };
-      
+
       loadInitialData();
     } else {
       setIsLoading(false);
@@ -240,20 +233,20 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
       console.log("LeaveContext - Approving leave:", { requestId, comment, hrOverride });
       const response = await leaveService.approveLeave(requestId, comment, hrOverride);
       console.log("LeaveContext - Approve response:", response);
-      
+
       // Force immediate refresh of all data
       await Promise.all([
-        fetchLeaveRequests(), 
+        fetchLeaveRequests(),
         fetchDashboardStats(),
         fetchUsers() // Refresh users to get updated balances
       ]);
-      
+
       // Trigger balance refresh in AuthContext
       window.dispatchEvent(new CustomEvent('refreshBalances'));
-      
+
       // Broadcast refresh event for all components
       window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
-      
+
       return { success: true, message: "Leave request approved successfully!" };
     } catch (error: any) {
       console.error("LeaveContext - Approve error:", error);
@@ -267,20 +260,20 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
       console.log("LeaveContext - Rejecting leave:", { requestId, comment });
       const response = await leaveService.rejectLeave(requestId, comment);
       console.log("LeaveContext - Reject response:", response);
-      
+
       // Force immediate refresh of all data
       await Promise.all([
-        fetchLeaveRequests(), 
+        fetchLeaveRequests(),
         fetchDashboardStats(),
         fetchUsers() // Refresh users to get updated balances
       ]);
-      
+
       // Trigger balance refresh in AuthContext
       window.dispatchEvent(new CustomEvent('refreshBalances'));
-      
+
       // Broadcast refresh event for all components
       window.dispatchEvent(new CustomEvent('leaveDataUpdated'));
-      
+
       return { success: true, message: "Leave request rejected." };
     } catch (error: any) {
       console.error("LeaveContext - Reject error:", error);
@@ -333,18 +326,18 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
   const refreshAllData = async () => {
     try {
       setIsLoading(true);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
+      const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+
       const promises = [
         fetchLeaveTypes(),
         fetchLeaveRequests(),
         fetchDashboardStats(),
       ];
-      
+
       if (roleKey(user.role) === 'HR_ADMIN' || roleKey(user.role) === 'MANAGER') {
         promises.push(fetchUsers());
       }
-      
+
       await Promise.all(promises);
     } catch (error) {
       console.error("Failed to refresh data:", error);

@@ -1,39 +1,60 @@
-require("dotenv").config({ path: "./.env" });
-const axios = require("axios");
+/**
+ * Test login directly against production database
+ */
+
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const PROD_URI = process.env.PRODUCTION_MONGODB_URI;
 
 async function testLogin() {
-  console.log("🔐 Testing Login API...\n");
-
   try {
-    const response = await axios.post("http://localhost:5000/api/auth/login", {
-      email: "Subramanya@aksharaenterprises.info",
-      password: "admin123",
-    });
-
-    console.log("✅ Login Successful!");
-    console.log("\nResponse:");
-    console.log("Success:", response.data.success);
-    console.log("Token:", response.data.token?.substring(0, 30) + "...");
-    console.log("\nUser Data:");
-    console.log("Name:", response.data.data.user.name);
-    console.log("Email:", response.data.data.user.email);
-    console.log("Role:", response.data.data.user.role);
-    console.log("Active:", response.data.data.user.isActive);
-  } catch (error) {
-    console.error("❌ Login Failed!");
+    console.log('Testing login...\n');
+    await mongoose.connect(PROD_URI);
     
-    if (error.response) {
-      console.error("\nStatus:", error.response.status);
-      console.error("Message:", error.response.data.message || error.response.data);
-      console.error("\nFull Response:", JSON.stringify(error.response.data, null, 2));
-    } else if (error.code === "ECONNREFUSED") {
-      console.error("\n⚠️ Cannot connect to backend server!");
-      console.error("Make sure the backend is running:");
-      console.error("  cd backend");
-      console.error("  npm start");
-    } else {
-      console.error("\nError:", error.message);
+    const User = require('./models/User');
+    
+    const email = 'subramanya@aksharaenterprises.info';
+    const password = 'Admin@123';
+    
+    console.log(`Looking for user: ${email}`);
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      console.log('❌ User NOT FOUND in database!\n');
+      
+      // List all users
+      const allUsers = await User.find({}).select('email name role');
+      console.log(`Found ${allUsers.length} users in database:`);
+      allUsers.forEach(u => console.log(`  - ${u.email} (${u.role})`));
+      
+      await mongoose.connection.close();
+      return;
     }
+    
+    console.log('✅ User found!');
+    console.log(`   Name: ${user.name}`);
+    console.log(`   Email: ${user.email}`);
+    console.log(`   Role: ${user.role}`);
+    console.log(`   Active: ${user.isActive}`);
+    console.log(`   Password hash exists: ${!!user.password}`);
+    console.log(`   Password hash length: ${user.password ? user.password.length : 0}\n`);
+    
+    // Test password
+    console.log('Testing password...');
+    const isMatch = await bcrypt.compare(password, user.password);
+    
+    if (isMatch) {
+      console.log('✅ Password MATCHES!\n');
+      console.log('Login should work. If it doesn\'t, the issue is elsewhere.');
+    } else {
+      console.log('❌ Password DOES NOT MATCH!\n');
+      console.log('The password in database is different from what you\'re trying.');
+    }
+    
+    await mongoose.connection.close();
+  } catch (error) {
+    console.error('Error:', error.message);
   }
 }
 

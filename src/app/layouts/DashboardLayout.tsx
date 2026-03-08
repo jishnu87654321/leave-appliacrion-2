@@ -13,7 +13,11 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout = ({ children, title, subtitle, allowedRoles }: DashboardLayoutProps) => {
   const { currentUser, isLoading } = useAuth();
-  const normalizeRole = (role?: string) => String(role || "").trim().toUpperCase();
+  const normalizeRole = (role?: string) => {
+    const r = String(role || "").trim().toUpperCase();
+    if (r === "ADMIN" || r === "HR" || r === "HR MANAGER" || r === "HR_MANAGER") return "HR_ADMIN";
+    return r;
+  };
 
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 animate-in fade-in duration-300">
@@ -34,6 +38,7 @@ export const DashboardLayout = ({ children, title, subtitle, allowedRoles }: Das
       HR_ADMIN: "/hr/dashboard",
       HR: "/hr/dashboard",
       ADMIN: "/hr/dashboard",
+      HR_MANAGER: "/hr/dashboard",
     };
     return <Navigate to={redirectMap[normalizeRole(currentUser.role)] || "/login"} replace />;
   }

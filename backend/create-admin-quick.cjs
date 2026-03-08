@@ -3,7 +3,7 @@
  * Run: node create-admin-quick.js
  */
 
-require("dotenv").config({ path: "./backend/.env" });
+require("dotenv").config({ path: "./.env" });
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
@@ -51,7 +51,7 @@ const createAdmin = async () => {
 
     // Check if admin already exists
     const existingAdmin = await User.findOne({ email: "Subramanya@aksharaenterprises.info" });
-    
+
     if (existingAdmin) {
       console.log("⚠️  Admin user already exists!");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -60,24 +60,24 @@ const createAdmin = async () => {
       console.log(`🔑 Role: ${existingAdmin.role}`);
       console.log(`✅ Active: ${existingAdmin.isActive}`);
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-      
+
       // Update password to known value
       const salt = await bcrypt.genSalt(12);
-      existingAdmin.password = await bcrypt.hash("password123", salt);
+      existingAdmin.password = await bcrypt.hash("admin123", salt);
       existingAdmin.isActive = true;
       existingAdmin.role = "HR_ADMIN";
       await existingAdmin.save();
-      
-      console.log("✅ Admin password reset to: password123");
+
+      console.log("✅ Admin password reset to: admin123");
       console.log("\n🎉 You can now login with:");
       console.log("   Email: Subramanya@aksharaenterprises.info");
-      console.log("   Password: password123\n");
+      console.log("   Password: admin123\n");
       process.exit(0);
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash("password123", salt);
+    const hashedPassword = await bcrypt.hash("admin123", salt);
 
     // Create admin user
     const admin = await User.create({
@@ -96,7 +96,7 @@ const createAdmin = async () => {
     console.log("✅ Admin user created successfully!");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log(`📧 Email: ${admin.email}`);
-    console.log(`🔑 Password: password123`);
+    console.log(`🔑 Password: admin123`);
     console.log(`👤 Name: ${admin.name}`);
     console.log(`🔑 Role: ${admin.role}`);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

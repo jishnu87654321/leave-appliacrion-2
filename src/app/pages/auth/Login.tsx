@@ -32,8 +32,7 @@ export default function Login() {
     const result = await login(email, password);
     setLoading(false);
     if (result.success) {
-      const stored = localStorage.getItem("user");
-      const user = stored ? JSON.parse(stored) : null;
+      const user = result.user;
       const roleMap: Record<string, string> = {
         EMPLOYEE: "/employee/dashboard",
         INTERN: "/intern/dashboard",
@@ -45,8 +44,22 @@ export default function Login() {
         HR_ADMIN: "/hr/dashboard",
         HR: "/hr/dashboard",
         ADMIN: "/hr/dashboard",
+        HR_MANAGER: "/hr/dashboard",
+        hr_manager: "/hr/dashboard",
       };
-      navigate(user ? (roleMap[user.role] || "/employee/dashboard") : "/employee/dashboard", { replace: true });
+
+      const targetRole = user?.role || "EMPLOYEE";
+      const normalizedRole = String(targetRole).trim().toUpperCase();
+
+      // Map specialized roles to base dashboard routes
+      let route = roleMap[normalizedRole] || roleMap[targetRole] || "/employee/dashboard";
+
+      // Specific checks for HR variants if not already in map
+      if (normalizedRole.includes("HR") || normalizedRole.includes("ADMIN")) {
+        route = "/hr/dashboard";
+      }
+
+      navigate(route, { replace: true });
     } else {
       setError(result.message);
     }

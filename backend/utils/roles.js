@@ -1,9 +1,9 @@
 const canonicalRole = (role) => {
   const normalized = String(role || "").trim().toUpperCase();
-  if (normalized === "ADMIN" || normalized === "HR" || normalized === "HR_ADMIN") {
+  if (normalized === "ADMIN" || normalized === "HR" || normalized === "HR_ADMIN" || normalized === "HR MANAGER" || normalized === "HR_MANAGER") {
     return "HR_ADMIN";
   }
-  if (normalized === "MANAGER") return "MANAGER";
+  if (normalized === "MANAGER" || normalized === "DEPT_MANAGER") return "MANAGER";
   if (normalized === "INTERN") return "INTERN";
   return "EMPLOYEE";
 };
