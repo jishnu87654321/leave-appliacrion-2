@@ -190,9 +190,9 @@ exports.updatePassword = async (req, res, next) => {
     const user = await User.findById(req.user._id).select("+password");
     if (!(await user.comparePassword(currentPassword))) return next(new AppError("Current password is incorrect.", 401));
 
-    // Enforce high complexity (same as registration)
-    if (newPassword.length < 12 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
-      return next(new AppError("Password must be 12+ chars with uppercase, lowercase, number, and special character.", 400));
+    // Enforce basic length constraint
+    if (newPassword.length < 6) {
+      return next(new AppError("Password must be at least 6 characters.", 400));
     }
 
     user.password = newPassword;
@@ -239,9 +239,9 @@ exports.resetPassword = async (req, res, next) => {
 
     if (!user) return next(new AppError("Invalid or expired reset token.", 400));
 
-    // Enforce complexity
-    if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-      return next(new AppError("Password must be 12+ chars with uppercase, lowercase, number, and special character.", 400));
+    // Enforce basic length constraint
+    if (password.length < 6) {
+      return next(new AppError("Password must be at least 6 characters.", 400));
     }
 
     if (await isPasswordCompromised(password)) {
