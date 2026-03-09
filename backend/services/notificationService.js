@@ -152,12 +152,14 @@ async function notifyLeaveEvent({
     }
 
     for (const recipient of recipients) {
-      await createInAppNotification(
-        recipient.userId,
-        `${employee.name} applied for ${leaveRequest.leaveType.name}.`,
-        "WARNING",
-        leaveRequest._id
-      );
+      if (recipient.userId) {
+        await createInAppNotification(
+          recipient.userId,
+          `${employee.name} applied for ${leaveRequest.leaveType.name}.`,
+          "WARNING",
+          leaveRequest._id
+        );
+      }
       await sendEmailWithFallback({
         event,
         recipientUserId: recipient.userId,
