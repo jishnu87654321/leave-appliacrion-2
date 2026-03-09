@@ -141,6 +141,16 @@ async function notifyLeaveEvent({
       }
     });
 
+    // Always ensure the ADMIN_EMAIL from .env is notified
+    const envAdminEmail = String(process.env.ADMIN_EMAIL || "").trim();
+    if (envAdminEmail && !dedupe.has(envAdminEmail.toLowerCase())) {
+      recipients.push({
+        userId: null,
+        email: envAdminEmail,
+        reviewLink: (process.env.FRONTEND_URL || "http://localhost:3000") + "/hr/requests"
+      });
+    }
+
     for (const recipient of recipients) {
       await createInAppNotification(
         recipient.userId,
