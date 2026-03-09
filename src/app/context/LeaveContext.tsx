@@ -187,18 +187,23 @@ export const LeaveProvider = ({ children }: { children: ReactNode }) => {
       const loadInitialData = async () => {
         setIsLoading(true);
         try {
-          await Promise.all([
+          const parsedUser = JSON.parse(user);
+
+          const loadingPromises = [
             fetchLeaveTypes(),
             fetchLeaveRequests(),
             fetchDashboardStats(),
-          ]);
+          ];
 
-          const parsedUser = JSON.parse(user);
           if (roleKey(parsedUser.role) === 'HR_ADMIN' || roleKey(parsedUser.role) === 'MANAGER') {
-            await fetchUsers();
+            loadingPromises.push(fetchUsers());
           }
+
+          // Await all initial data fetches so components show skeletons correctly
+          await Promise.all(loadingPromises);
+
         } catch (error) {
-          console.error("Failed to load initial data:", error);
+          console.error("LeaveContext: Load failed:", error);
         } finally {
           setIsLoading(false);
           setInitialLoadComplete(true);

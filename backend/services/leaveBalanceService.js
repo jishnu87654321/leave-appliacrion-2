@@ -58,31 +58,38 @@ async function initializeUserBalances(userId) {
   if (!user) throw new Error("User not found");
 
   const leaveTypes = await LeaveType.find({ isActive: true });
+  let modified = false;
+
   for (const leaveType of leaveTypes) {
     if (user.probationStatus && !leaveType.applicableDuringProbation) continue;
 
     const existing = user.leaveBalances.find(
       (b) => b.leaveTypeId.toString() === leaveType._id.toString()
     );
-    if (existing) {
-      await syncLeaveBalanceDoc(user._id, leaveType._id, existing);
-      continue;
+
+    if (!existing) {
+      const initialBalance = calculateInitialBalance(user, leaveType);
+      user.leaveBalances.push({
+        leaveTypeId: leaveType._id,
+        balance: initialBalance,
+        used: 0,
+        pending: 0,
+      });
+      modified = true;
+
+      // Only sync new balances immediately
+      await syncLeaveBalanceDoc(user._id, leaveType._id, {
+        balance: initialBalance,
+        used: 0,
+        pending: 0
+      });
     }
-
-    const initialBalance = calculateInitialBalance(user, leaveType);
-
-    user.leaveBalances.push({
-      leaveTypeId: leaveType._id,
-      balance: initialBalance,
-      used: 0,
-      pending: 0,
-    });
   }
-  await user.save();
 
-  for (const balance of user.leaveBalances) {
-    await syncLeaveBalanceDoc(user._id, balance.leaveTypeId, balance);
+  if (modified) {
+    await user.save();
   }
+
   return user.leaveBalances;
 }
 

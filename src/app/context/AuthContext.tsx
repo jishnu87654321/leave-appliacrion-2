@@ -99,13 +99,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         if (sessionStorage.getItem("token")) {
-          await Promise.all([fetchNotifications(), fetchLeaveBalances()]);
+          // Fetch background data without blocking the main UI boot
+          fetchNotifications();
+          fetchLeaveBalances();
         }
       } catch (error) {
+        console.error("AuthContext init error:", error);
         sessionStorage.removeItem("user");
         sessionStorage.removeItem("token");
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     initAuth();
