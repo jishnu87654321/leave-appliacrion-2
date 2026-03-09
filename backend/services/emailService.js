@@ -30,20 +30,21 @@ function getCandidateHosts(primaryHost) {
 function getTransporter(hostOverride) {
   const cfg = getEmailConfig();
   const targetHost = String(hostOverride || cfg.host).trim();
-  if (transporter && activeHost === targetHost) return transporter;
 
-  transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host: targetHost,
     port: cfg.port,
-    secure: false,
+    secure: false, // true for 465, false for 587
     auth: {
       user: cfg.user,
       pass: cfg.pass,
     },
     requireTLS: true,
+    pool: false, // Ensure we don't hold idle connections that might be dropped
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
-  activeHost = targetHost;
-  return transporter;
 }
 
 async function verifySmtpConnection() {
