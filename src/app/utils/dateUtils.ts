@@ -57,8 +57,12 @@ export const isDateInRange = (date: string, from: string, to: string): boolean =
 export const getMonthName = (month: number): string =>
   new Date(2000, month, 1).toLocaleString("en-US", { month: "long" });
 
-export const toInputDate = (date: Date): string =>
-  date.toISOString().split("T")[0];
+export const toInputDate = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 
 export const getTodayStr = (): string => toInputDate(new Date());
 
