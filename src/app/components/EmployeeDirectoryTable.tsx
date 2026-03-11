@@ -1,5 +1,5 @@
 import React from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 
 /**
  * Employee Directory Table Component
@@ -32,6 +32,7 @@ export interface LeaveBalance {
 interface EmployeeDirectoryTableProps {
   employees: EmployeeData[];
   onEdit?: (employee: EmployeeData) => void;
+  onDelete?: (employee: EmployeeData) => void;
   showLeaveBalances?: boolean;
   className?: string;
 }
@@ -68,6 +69,7 @@ const formatDate = (dateString: string): string => {
 export const EmployeeDirectoryTable: React.FC<EmployeeDirectoryTableProps> = ({
   employees,
   onEdit,
+  onDelete,
   showLeaveBalances = true,
   className = "",
 }) => {
@@ -107,7 +109,7 @@ export const EmployeeDirectoryTable: React.FC<EmployeeDirectoryTableProps> = ({
               )}
               {showLeaveBalances && (
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">
-                  Leave Balances
+                  Sick Leave
                 </th>
               )}
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">
@@ -211,36 +213,37 @@ export const EmployeeDirectoryTable: React.FC<EmployeeDirectoryTableProps> = ({
                   {showLeaveBalances && (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {employee.leaveBalances && employee.leaveBalances.length > 0 ? (
-                          employee.leaveBalances.slice(0, 3).map((balance, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center text-xs px-1.5 py-0.5 rounded text-white font-bold transition-transform duration-200 hover:scale-110"
-                              style={{ backgroundColor: balance.color }}
-                              title={`${balance.name}: ${balance.balance} days`}
-                            >
-                              {balance.code}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-xs text-gray-400">No balances</span>
-                        )}
+                        <span className="text-sm font-bold text-red-600">
+                          {employee.leaveBalances?.find((b) => b.code === "SL")?.balance ?? 0}
+                        </span>
                       </div>
                     </td>
                   )}
 
                   {/* Action Column */}
                   <td className="px-4 py-3">
-                    {onEdit && (
-                      <button
-                        onClick={() => onEdit(employee)}
-                        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 transition-all duration-200 hover:scale-105"
-                        aria-label={`Edit ${employee.name}`}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                      </button>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {onEdit && (
+                        <button
+                          onClick={() => onEdit(employee)}
+                          className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 transition-all duration-200 hover:scale-105"
+                          aria-label={`Edit ${employee.name}`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          onClick={() => onDelete(employee)}
+                          className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded-lg hover:bg-red-50 transition-all duration-200 hover:scale-105"
+                          aria-label={`Delete ${employee.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

@@ -18,7 +18,7 @@ const xss = require("xss");
  */
 exports.createUser = async (req, res, next) => {
   try {
-    const { name, email, password, role, department, designation, phone, isActive, probationStatus } = req.body;
+    const { name, email, password, role, department, designation, phone, isActive, probationStatus, joinDate } = req.body;
 
     // Validate required fields
     if (!name || !email || !password || !department) {
@@ -32,6 +32,9 @@ exports.createUser = async (req, res, next) => {
     }
 
     const normalizedRole = normalizeRoleForDb(role || "employee");
+    if (!["employee", "intern"].includes(normalizedRole)) {
+      return next(new AppError("Only Employee and Intern roles can be created via this form.", 400));
+    }
 
     const isOnProbation = probationStatus === undefined ? false : Boolean(probationStatus);
 
@@ -47,6 +50,7 @@ exports.createUser = async (req, res, next) => {
       isActive: isActive !== undefined ? isActive : true,
       probationStatus: isOnProbation,
       probationEndDate: isOnProbation ? new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000) : null,
+      joinDate: joinDate ? new Date(joinDate) : new Date(),
     });
 
     // Initialize leave balances
@@ -115,7 +119,7 @@ exports.createUser = async (req, res, next) => {
  */
 exports.getAllUsers = async (req, res, next) => {
   try {
-    const { role, department, isActive, page = 1, limit = 50, search } = req.query;
+    const { role, department, isActive, page = 1, limit = 5000, search } = req.query;
     const query = {};
     const requesterRole = canonicalRole(req.user.role);
     if (role) query.role = normalizeRoleForDb(role);
@@ -182,7 +186,7 @@ exports.getUserById = async (req, res, next) => {
  */
 exports.updateUser = async (req, res, next) => {
   try {
-    const { name, email, role, department, designation, phone, probationStatus, isActive } = req.body;
+    const { name, email, role, department, designation, phone, probationStatus, isActive, joinDate } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return next(new AppError("User not found.", 404));
 
@@ -209,6 +213,10 @@ exports.updateUser = async (req, res, next) => {
     if (phone) user.phone = xss(phone.trim());
     if (probationStatus !== undefined) user.probationStatus = probationStatus;
     if (isActive !== undefined) user.isActive = isActive;
+    if (joinDate) {
+      user.joinDate = new Date(joinDate);
+      user.joining_date = new Date(joinDate);
+    }
 
     await user.save();
 

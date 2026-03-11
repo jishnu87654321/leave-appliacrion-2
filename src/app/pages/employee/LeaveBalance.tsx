@@ -22,7 +22,7 @@ export default function LeaveBalance() {
       const remaining = Number(lb.balance || 0);
       const used = Number(lb.used || 0);
       const pending = Number(lb.pending || 0);
-      const total = Number(lb.total ?? remaining + used);
+      const total = Number((lb as any).total ?? remaining + used);
       const pct = total > 0 ? Math.round((remaining / total) * 100) : 100;
       const meta = leaveTypeMeta.get(code);
       const yearlyTotal =
@@ -162,11 +162,20 @@ export default function LeaveBalance() {
           <div>
             <h4 className="font-bold text-blue-900 text-sm mb-2">Leave Policy Highlights</h4>
             <ul className="space-y-1 text-xs text-blue-700">
-              <li>• Earned Leave accrues monthly at {formatDays(1.25, "/month")} ({formatDays(15, "/year")}), with carry forward capped at {formatDays(30)}.</li>
-              <li>• Sick Leave accrues monthly at {formatDays(1, "/month")} ({formatDays(12, "/year")}).</li>
-              {creditInfo?.lastCreditedMonth && <li>• Last credited month: {creditInfo.lastCreditedMonth}</li>}
-              {creditInfo?.nextCreditDate && <li>• Next credit date: {new Date(creditInfo.nextCreditDate).toISOString().slice(0, 10)}</li>}
-              {currentUser.probationStatus && <li className="text-amber-700 font-medium">• You are currently in the probation period. Earned Leave is not applicable.</li>}
+              {currentUser.role === 'intern' || currentUser.role === 'INTERN' ? (
+                <>
+                  <li>â€¢ Earned Leave accrues monthly at {formatDays(1, "/month")} ({formatDays(12, "/year")}).</li>
+                  <li>â€¢ Sick Leave is not provided for interns ({formatDays(0, "/month")}).</li>
+                </>
+              ) : (
+                <>
+                  <li>â€¢ Earned Leave accrues monthly at {formatDays(1.25, "/month")} ({formatDays(15, "/year")}), with carry forward capped at {formatDays(30)}.</li>
+                  <li>â€¢ Sick Leave accrues monthly at {formatDays(1, "/month")} ({formatDays(12, "/year")}).</li>
+                </>
+              )}
+              {creditInfo?.lastCreditedMonth && <li>â€¢ Last credited month: {creditInfo.lastCreditedMonth}</li>}
+              {creditInfo?.nextCreditDate && <li>â€¢ Next credit date: {new Date(creditInfo.nextCreditDate).toISOString().slice(0, 10)}</li>}
+              {currentUser.probationStatus && <li className="text-amber-700 font-medium">â€¢ You are currently in the probation period. Earned Leave is not applicable.</li>}
             </ul>
           </div>
         </div>

@@ -30,7 +30,7 @@ router.get("/:id", isSelfOrPrivileged(), getUserById);
 // HR-only mutations
 router.post("/", restrictTo("HR_ADMIN"), createUser);
 router.put("/:id", restrictTo("HR_ADMIN"), updateUser);
-router.delete("/:id", restrictTo("HR_ADMIN"), deleteUser);
+router.delete("/:id", restrictTo("HR_ADMIN", "MANAGER"), deleteUser);
 router.patch("/:id/activate", restrictTo("HR_ADMIN"), activateUser);
 router.patch("/:id/deactivate", restrictTo("HR_ADMIN"), deactivateUser);
 router.patch("/:id/assign-manager", restrictTo("HR_ADMIN"), assignManager);

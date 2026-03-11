@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Search, UserPlus, Pencil, ToggleLeft, ToggleRight, CheckCircle, XCircle, Clock } from "lucide-react";
+import React, { useState, useRef } from "react";
+import { Search, UserPlus, Pencil, ToggleLeft, ToggleRight, CheckCircle, XCircle, Clock, UploadCloud } from "lucide-react";
+import Papa from "papaparse";
 import { DashboardLayout } from "../../layouts/DashboardLayout";
 import { Modal } from "../../components/Modal";
 import { EmployeeDirectoryTable, EmployeeData } from "../../components/EmployeeDirectoryTable";
@@ -33,6 +34,9 @@ export default function UserManagement() {
   const [balanceReason, setBalanceReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [departmentRequests, setDepartmentRequests] = useState<any[]>([]);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importResults, setImportResults] = useState<{ total: number; success: number; failed: number; errors: string[] } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Ensure data is loaded when component mounts
   React.useEffect(() => {
@@ -135,6 +139,20 @@ export default function UserManagement() {
     }
   };
 
+  const handleDelete = async (userId: string) => {
+    if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+      return;
+    }
+    try {
+      await userService.deleteUser(userId);
+      toast.success("User deleted successfully");
+      await fetchUsers();
+    } catch (error: any) {
+      console.error("Error deleting user:", error);
+      toast.error(error.response?.data?.message || "Failed to delete user");
+    }
+  };
+
   const startEdit = (u: any) => {
     setEditingUser(u);
     setFormData({ 
@@ -154,8 +172,64 @@ export default function UserManagement() {
       designation: "",
       role: "employee",
       department: "Engineering",
+      joinDate: new Date().toISOString().slice(0, 10),
       isActive: true,
       probationStatus: true,
+    });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsSaving(true);
+    setImportResults(null);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results: any) => {
+        const rows = results.data as any[];
+        let successCount = 0;
+        let failCount = 0;
+        const errs: string[] = [];
+        
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          try {
+            if (!row.Email || !row.Name || !row.Password || !row.Department) {
+              throw new Error("Missing required fields (Name, Email, Password, Department)");
+            }
+            const payload = {
+              name: row.Name,
+              email: row.Email,
+              password: row.Password,
+              role: row.Role ? row.Role.toLowerCase() : "employee",
+              department: row.Department,
+              joinDate: row["Join Date"] || new Date().toISOString().slice(0, 10),
+              designation: row.Designation || "",
+              phone: row.Phone || "",
+              isActive: true,
+              probationStatus: true
+            };
+            
+            await userService.createUser(payload);
+            successCount++;
+          } catch (error: any) {
+            failCount++;
+            errs.push(`Row ${i + 2} (${row.Email || 'Unknown'}): ${error.response?.data?.message || error.message}`);
+          }
+        }
+        
+        setIsSaving(false);
+        setImportResults({ total: rows.length, success: successCount, failed: failCount, errors: errs });
+        await fetchUsers();
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      },
+      error: (error: any) => {
+        setIsSaving(false);
+        toast.error("Failed to parse CSV file: " + error.message);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
     });
   };
 
@@ -212,6 +286,7 @@ export default function UserManagement() {
         department: formData.department,
         probationStatus: formData.probationStatus,
         isActive: formData.isActive, // Added isActive field
+        joinDate: formData.joinDate,
       };
       
       await userService.updateUser(editingUser._id || editingUser.id, updateData);
@@ -331,13 +406,23 @@ export default function UserManagement() {
                 Pending Approval ({pendingUsers.length})
               </button>
             </div>
-            <button
-              onClick={startCreate}
-              className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl font-semibold text-sm hover:bg-green-700 transition-all shadow-md hover:shadow-lg"
-            >
-              <UserPlus className="w-4 h-4" />
-              Create New User
-            </button>
+            <div className="flex gap-2">
+              <input type="file" ref={fileInputRef} accept=".csv" className="hidden" onChange={handleFileUpload} />
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
+              >
+                <UploadCloud className="w-4 h-4" />
+                Import Users
+              </button>
+              <button
+                onClick={startCreate}
+                className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl font-semibold text-sm hover:bg-green-700 transition-all shadow-md hover:shadow-lg"
+              >
+                <UserPlus className="w-4 h-4" />
+                Create New User
+              </button>
+            </div>
           </div>
 
           {/* Filters */}
@@ -388,6 +473,7 @@ export default function UserManagement() {
             const originalUser = filtered.find(u => (u._id || u.id) === employee.id);
             if (originalUser) startEdit(originalUser);
           }}
+          onDelete={(employee) => handleDelete(employee.id)}
           showLeaveBalances={true}
         />
       )}
@@ -464,6 +550,86 @@ export default function UserManagement() {
         </div>
       )}
 
+      {/* CSV Import Modal */}
+      <Modal 
+        isOpen={isImportModalOpen} 
+        onClose={() => { setIsImportModalOpen(false); setImportResults(null); }} 
+        title="Import Users via CSV" 
+        size="lg"
+        footer={
+          <button 
+            onClick={() => { setIsImportModalOpen(false); setImportResults(null); }} 
+            className="w-full py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50"
+          >
+            Close
+          </button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+            <h4 className="font-bold mb-2">CSV Template Format</h4>
+            <p className="mb-2">Your CSV file must include a header row with the following exact names:</p>
+            <code className="block bg-white p-2 rounded border border-blue-100 font-mono text-xs">
+              Name,Email,Password,Role,Department,Designation,Phone,Join Date
+            </code>
+            <ul className="list-disc pl-5 mt-2 space-y-1 text-xs">
+              <li><strong>Role</strong> should be 'employee' or 'intern'.</li>
+              <li><strong>Join Date</strong> should be in YYYY-MM-DD format.</li>
+            </ul>
+          </div>
+
+          {!importResults && !isSaving && (
+            <div className="flex justify-center mt-6">
+              <button 
+                onClick={() => fileInputRef.current?.click()} 
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold shadow hover:bg-blue-700 flex items-center justify-center gap-2"
+              >
+                <UploadCloud className="w-5 h-5" />
+                Select CSV File
+              </button>
+            </div>
+          )}
+
+          {isSaving && (
+            <div className="text-center py-6">
+              <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+              <p className="text-gray-600 font-medium">Processing CSV...</p>
+            </div>
+          )}
+
+          {importResults && (
+            <div className="space-y-3">
+              <h4 className="font-bold text-gray-900 border-b pb-2">Import Summary</h4>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg text-center">
+                  <p className="text-sm text-gray-500">Total Rows</p>
+                  <p className="text-2xl font-bold">{importResults.total}</p>
+                </div>
+                <div className="bg-green-50 border border-green-100 p-3 rounded-lg text-center">
+                  <p className="text-sm text-green-700">Success</p>
+                  <p className="text-2xl font-bold text-green-700">{importResults.success}</p>
+                </div>
+                <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-center">
+                  <p className="text-sm text-red-700">Failed</p>
+                  <p className="text-2xl font-bold text-red-700">{importResults.failed}</p>
+                </div>
+              </div>
+
+              {importResults.errors.length > 0 && (
+                <div className="mt-4">
+                  <p className="font-semibold text-xs text-red-600 mb-2">Errors Logs:</p>
+                  <div className="bg-red-50 p-3 rounded-lg max-h-40 overflow-y-auto border border-red-100 space-y-1 text-left">
+                    {importResults.errors.map((err, i) => (
+                      <p key={i} className="text-xs text-red-800 font-mono">{err}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
+
       {/* Edit User Modal */}
       <Modal isOpen={!!editingUser} onClose={() => setEditingUser(null)} title={`Edit: ${editingUser?.name || 'User'}`} size="xl"
         footer={
@@ -499,6 +665,11 @@ export default function UserManagement() {
                 <option value="hr_admin">HR Admin</option>
                 <option value="intern">Interns</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Join Date</label>
+                <input type="date" value={formData.joinDate ? formData.joinDate.slice(0, 10) : ''} onChange={e => setFormData((p: any) => ({ ...p, joinDate: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Department</label>
@@ -642,10 +813,17 @@ export default function UserManagement() {
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
               >
                 <option value="employee">Employee</option>
-                <option value="manager">Manager</option>
-                <option value="hr_admin">HR Admin</option>
                 <option value="intern">Interns</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Join Date *</label>
+              <input 
+                type="date" 
+                value={formData.joinDate ? formData.joinDate.slice(0, 10) : ''}
+                onChange={e => setFormData((p: any) => ({ ...p, joinDate: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
+              />
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-1">Department *</label>

@@ -42,7 +42,7 @@ exports.register = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return next(new AppError(errors.array()[0].msg, 400));
 
-    const { name, email, password, department, designation, phone } = req.body;
+    const { name, email, password, department, designation, phone, role } = req.body;
 
     if (await isPasswordCompromised(password)) {
       return next(new AppError("Password has appeared in known breaches. Choose a different password.", 400));
@@ -63,7 +63,7 @@ exports.register = async (req, res, next) => {
       department: sanitizedDepartment,
       designation: designation?.trim() || "",
       phone: phone?.trim() || "",
-      role: "employee",
+      role: role === "intern" ? "intern" : "employee",
       isActive: false,
       probationStatus: true,
       probationEndDate: new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
@@ -76,15 +76,15 @@ exports.register = async (req, res, next) => {
       category: "AUTH",
       performedBy: user._id,
       performedByName: user.name,
-      performedByRole: "EMPLOYEE",
+      performedByRole: "USER",
       target: `${user.name} (${user.email})`,
-      metadata: { department: sanitizedDepartment, role: "employee" },
+      metadata: { department: sanitizedDepartment, role: user.role },
     });
 
     const hrAdmins = await User.find({ role: { $in: ["HR_ADMIN", "hr_admin", "ADMIN", "HR"] }, isActive: true });
 
-    // Role is hardcoded to "employee" (Fix 2)
-    const roleLabel = "Employee";
+    // Role dynamic
+    const roleLabel = user.role === "intern" ? "Intern" : "Employee";
 
     for (const admin of hrAdmins) {
       await Notification.create({
@@ -100,7 +100,7 @@ exports.register = async (req, res, next) => {
       employeeName: user.name,
       employeeEmail: user.email,
       department: user.department,
-      role: "employee",
+      role: user.role,
       registrationTime: new Date().toISOString(),
       activationStatus: user.isActive ? "Active" : "Pending Activation",
     });
