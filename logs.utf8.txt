@@ -1,0 +1,17 @@
+﻿Recent logs:
+[2026-03-09T13:07:05.539Z] APPROVED -> test@example.com | Status: FAILED | error: Connection timeout
+[2026-03-09T13:05:05.286Z] APPLY -> hr.admin@aksharaenterprises.info | Status: FAILED | error: Connection timeout
+[2026-03-09T13:04:44.833Z] APPLY -> subramanya@aksharaenterprises.info | Status: FAILED | error: Connection timeout
+[2026-03-09T12:54:40.661Z] APPLY -> hr.admin@aksharaenterprises.info | Status: SENT | error: 
+[2026-03-09T12:54:39.816Z] APPLY -> subramanya@aksharaenterprises.info | Status: SENT | error: 
+[2026-03-09T12:50:04.247Z] APPLY -> subramanya@aksharaenterprises.info | Status: SENT | error: 
+[2026-03-09T12:48:36.739Z] APPLY -> subramanya@aksharaenterprises.info | Status: SENT | error: 
+[2026-03-09T12:40:08.971Z] APPLY -> subramanya@aksharaenterprises.info | Status: SENT | error: 
+[2026-03-09T10:44:40.605Z] APPLY -> subramanya@aksharaenterprises.info | Status: FAILED | error: Connection timeout
+[2026-03-09T10:06:40.302Z] APPROVED -> jishnunreddy@gmail.com | Status: FAILED | error: Connection timeout
+
+Recent Leave requests:
+[2026-03-09T13:04:43.216Z] Reason: reson testing | Status: APPROVED
+[2026-03-09T10:44:39.032Z] Reason: hyfbge3wfghewfgrt4trg | Status: PENDING
+[2026-03-09T07:23:21.809Z] Reason: reson asdnasdkoasmda | Status: APPROVED
+[2026-03-09T07:16:58.742Z] Reason: Applying for stealth testing | Status: APPROVED
