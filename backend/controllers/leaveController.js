@@ -109,15 +109,46 @@ exports.applyLeave = async (req, res, next) => {
     });
     if (overlap) return next(new AppError("You have an existing leave request overlapping with these dates.", 409));
 
-    // Check if 10 or more people are already on leave during the requested dates
-    const overlappingLeaves = await LeaveRequest.countDocuments({
+    // Check if 100 or more people are already on leave during any requested working day
+    const overlappingRequests = await LeaveRequest.find({
       status: { $in: ["PENDING", "HR_PENDING", "APPROVED"] },
       fromDate: { $lte: new Date(toDate) },
       toDate: { $gte: new Date(fromDate) },
     });
 
-    if (overlappingLeaves >= 10) {
-      return next(new AppError("Cannot apply for leave. Maximum of 10 people can be on leave at the same time. Please choose different dates.", 400));
+    const { getActiveCalendar } = require("../services/calendarService");
+    const activeCalendar = await getActiveCalendar();
+    const weekendDays = new Set(activeCalendar.weekendDays || [0]);
+    const holidayMap = new Map((activeCalendar.holidays || []).map((h) => {
+      const dateKey = h.date instanceof Date ? h.date.toISOString().split("T")[0] : new Date(h.date).toISOString().split("T")[0];
+      return [dateKey, Boolean(h.isWorkingDayOverride)];
+    }));
+
+    const reqStart = new Date(fromDate);
+    const reqEnd = new Date(toDate);
+    const maxLeavePerDay = 100;
+
+    for (let d = new Date(reqStart); d <= reqEnd; d.setDate(d.getDate() + 1)) {
+      const dateKey = d.toISOString().split("T")[0];
+      const dayOfWeek = d.getDay();
+      
+      const isWeekend = leaveType.excludeWeekends !== false && weekendDays.has(dayOfWeek);
+      const isHoliday = leaveType.excludePublicHolidays !== false && holidayMap.has(dateKey) && !holidayMap.get(dateKey);
+      const isWorkingOverride = holidayMap.get(dateKey) === true;
+      const isWorkingDay = (!isWeekend && !isHoliday) || isWorkingOverride;
+      
+      if (!isWorkingDay) continue;
+
+      let leavesOnThisDay = 0;
+      for (const req of overlappingRequests) {
+        if (new Date(req.fromDate) <= d && new Date(req.toDate) >= d) {
+          leavesOnThisDay++;
+        }
+      }
+
+      if (leavesOnThisDay >= maxLeavePerDay) {
+        return next(new AppError(`Cannot apply for leave. Maximum of ${maxLeavePerDay} people can be on leave at the same time. Please choose different dates.`, 400));
+      }
     }
 
     // Balance check
